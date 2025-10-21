@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Transfixing Animations</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        /* Apply Inter font globally and set base styles */
+        body {
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            min-height: 100vh;
+            overflow: hidden;
+            background-color: #111827; /* bg-gray-900 (Reverted from black) */
+            position: relative; /* Needed for absolute positioning of shapes */
+            cursor: pointer; /* Indicate the body is clickable */
+        }
+
+        /* Container for the animated shapes */
+        .animation-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            z-index: 0;
+            /* Removed perspective */
+        }
+
+        /* Base style for the dynamically created shapes */
+        .shape {
+            position: absolute;
+            opacity: 0; /* Start transparent, animation will fade in */
+            filter: blur(40px); /* Default blur, can be overridden */
+            will-change: transform, opacity, background-color, border-radius;
+            /* Default size and background, overridden by styles */
+            width: 200px;
+            height: 200px;
+            background: linear-gradient(45deg, #ff00ff, #00ffff);
+            /* Base animation properties - name and duration will be set by style classes */
+            animation-timing-function: linear;
+            animation-iteration-count: infinite;
+            animation-direction: alternate; /* Most styles alternate */
+            animation-fill-mode: forwards;
+            /* Removed transform-style: preserve-3d */
+            /* Removed initial centering transform */
+        }
+
+        /* Removed .shape.in-focus style */
+
+        /* --- Animation Style Definitions (Original 5 Styles) --- */
+
+        /* Style 1: Slow & Relaxing (Gentle Morphing Blobs) */
+        @keyframes animateStyle1 { /* Slow Morph */
+             0%, 100% { transform: translateX(0) translateY(0) rotate(0deg) scale(1); opacity: 0.6; border-radius: 40% 60% 70% 30% / 40% 50% 60% 50%; }
+             50% { transform: translateX(20px) translateY(30px) rotate(45deg) scale(1.1); opacity: 0.7; border-radius: 70% 30% 50% 50% / 30% 30% 70% 70%; }
+        }
+        .style-1 .shape { animation-name: animateStyle1; animation-duration: 40s; filter: blur(40px); }
+        /* Specific overrides for style 1 */
+        .style-1 .shape-1 { background: linear-gradient(45deg, #8A2BE2, #4682B4); width: 350px; height: 350px; }
+        .style-1 .shape-2 { background: linear-gradient(45deg, #5F9EA0, #7FFFD4); width: 280px; height: 280px; }
+        .style-1 .shape-3 { background: linear-gradient(45deg, #6495ED, #B0C4DE); width: 300px; height: 300px; }
+        .style-1 .shape-4 { background: linear-gradient(45deg, #483D8B, #AFEEEE); width: 250px; height: 250px; }
+        .style-1 .shape-5 { background: linear-gradient(45deg, #20B2AA, #ADD8E6); width: 220px; height: 220px; }
+
+
+        /* Style 2: Fast & Engaging (Quick Dashes & Rotations) */
+        @keyframes animateStyle2 { /* Fast Dash */
+             0%, 100% { transform: translateX(0) translateY(0) rotate(0deg) scale(1); opacity: 0.8; border-radius: 50%; }
+             25% { transform: translateX(100px) translateY(-50px) rotate(180deg) scale(0.8); opacity: 0.6; border-radius: 10% 90% 10% 90% / 90% 10% 90% 10%; }
+             50% { transform: translateX(-80px) translateY(100px) rotate(360deg) scale(1.2); opacity: 0.9; border-radius: 50%; }
+             75% { transform: translateX(50px) translateY(-100px) rotate(540deg) scale(0.7); opacity: 0.7; border-radius: 90% 10% 90% 10% / 10% 90% 10% 90%; }
+        }
+        .style-2 .shape { animation-name: animateStyle2; animation-duration: 8s; filter: blur(20px); }
+        /* Specific overrides for style 2 */
+        .style-2 .shape-1 { background: linear-gradient(45deg, #FF4500, #FFD700); width: 200px; height: 200px; }
+        .style-2 .shape-2 { background: linear-gradient(45deg, #FF00FF, #DC143C); width: 180px; height: 180px; }
+        .style-2 .shape-3 { background: linear-gradient(45deg, #00FF00, #FFFF00); width: 220px; height: 220px; }
+        .style-2 .shape-4 { background: linear-gradient(45deg, #1E90FF, #00FFFF); width: 160px; height: 160px; }
+        .style-2 .shape-5 { background: linear-gradient(45deg, #FF69B4, #FF1493); width: 240px; height: 240px; }
+
+
+        /* Style 3: Pulsing & Breathing */
+        @keyframes animateStyle3 { /* Pulse */
+             0%, 100% { transform: scale(0.9) rotate(10deg); opacity: 0.5; border-radius: 60% 40% 60% 40% / 40% 60% 40% 60%; }
+             50% { transform: scale(1.1) rotate(-10deg); opacity: 0.8; border-radius: 40% 60% 40% 60% / 60% 40% 60% 40%; }
+        }
+        .style-3 .shape { animation-name: animateStyle3; animation-duration: 15s; animation-timing-function: ease-in-out; filter: blur(30px); }
+         /* Specific overrides for style 3 */
+        .style-3 .shape-1 { background: linear-gradient(to right, #f857a6, #ff5858); width: 300px; height: 300px; }
+        .style-3 .shape-2 { background: linear-gradient(to right, #43e97b, #38f9d7); width: 250px; height: 250px; }
+        .style-3 .shape-3 { background: linear-gradient(to right, #1cd8d2, #93edc7); width: 280px; height: 280px; }
+        .style-3 .shape-4 { background: linear-gradient(to right, #ff7e5f, #feb47b); width: 220px; height: 220px; }
+        .style-3 .shape-5 { background: linear-gradient(to right, #6a11cb, #2575fc); width: 320px; height: 320px; }
+
+
+        /* Style 4: Geometric & Structured (Squares/Rectangles) */
+        @keyframes animateStyle4 { /* Geometric Shift */
+             0%, 100% { transform: translateX(-50px) translateY(-50px) rotate(0deg); opacity: 0.7; border-radius: 10%; }
+             50% { transform: translateX(50px) translateY(50px) rotate(90deg); opacity: 0.6; border-radius: 20%; }
+        }
+        .style-4 .shape { animation-name: animateStyle4; animation-duration: 25s; filter: blur(10px); }
+        /* Specific overrides for style 4 */
+        .style-4 .shape { border-radius: 10%; } /* Make them squarish */
+        .style-4 .shape-1 { background-color: #e11d48; width: 150px; height: 250px; }
+        .style-4 .shape-2 { background-color: #db2777; width: 200px; height: 200px; }
+        .style-4 .shape-3 { background-color: #9333ea; width: 250px; height: 150px; }
+        .style-4 .shape-4 { background-color: #4f46e5; width: 180px; height: 180px; }
+        .style-4 .shape-5 { background-color: #1d4ed8; width: 220px; height: 160px; }
+
+
+        /* Style 5: Chaotic & Energetic */
+        @keyframes animateStyle5 { /* Chaos */
+             0%   { transform: translate(0px, 0px) rotate(0deg) scale(1); opacity: 0.8; border-radius: 50% 50% 30% 70% / 60% 40% 70% 30%; }
+             20%  { transform: translate(80px, -40px) rotate(120deg) scale(1.1); opacity: 0.7; border-radius: 30% 70% 70% 30% / 30% 70% 30% 70%; }
+             40%  { transform: translate(-50px, 60px) rotate(240deg) scale(0.8); opacity: 0.9; border-radius: 70% 30% 40% 60% / 70% 30% 60% 40%; }
+             60%  { transform: translate(30px, -90px) rotate(360deg) scale(1.2); opacity: 0.6; border-radius: 50% 50% 50% 50% / 80% 20% 80% 20%; }
+             80%  { transform: translate(-70px, 20px) rotate(480deg) scale(0.9); opacity: 0.8; border-radius: 20% 80% 50% 50% / 50% 50% 20% 80%; }
+             100% { transform: translate(0px, 0px) rotate(720deg) scale(1); opacity: 0.8; border-radius: 50% 50% 30% 70% / 60% 40% 70% 30%; }
+        }
+        .style-5 .shape {
+             animation-name: animateStyle5; animation-duration: 12s;
+             animation-timing-function: ease-in-out; filter: blur(25px);
+             animation-direction: normal; /* Loop forward only */
+         }
+        /* Specific overrides for style 5 */
+        .style-5 .shape-1 { background: linear-gradient(135deg, #ff0000, #0000ff); width: 200px; height: 200px; }
+        .style-5 .shape-2 { background: linear-gradient(135deg, #00ff00, #ff00ff); width: 150px; height: 150px; }
+        .style-5 .shape-3 { background: linear-gradient(135deg, #ffff00, #00ffff); width: 250px; height: 250px; }
+        .style-5 .shape-4 { background: linear-gradient(135deg, #ffa500, #800080); width: 180px; height: 180px; }
+        .style-5 .shape-5 { background: linear-gradient(135deg, #ffffff, #000000); width: 220px; height: 220px; }
+
+        /* Removed Style 6 and Style 7 definitions */
+
+        /* Reverted to using shape-N for placement/delay */
+        .shape-1 { top: 10%; left: 10%; animation-delay: 0s; }
+        .shape-2 { top: 60%; left: 70%; animation-delay: -1s; }
+        .shape-3 { top: 30%; left: 40%; animation-delay: -2s; }
+        .shape-4 { top: 50%; left: 15%; animation-delay: -3s; }
+        .shape-5 { top: 15%; left: 80%; animation-delay: -4s; }
+
+        /* Removed .placement-N helper classes */
+
+    </style>
+</head>
+<body>
+    <div class="animation-container" id="animationContainer">
+        </div>
+
+    <script>
+        // Wait for the DOM to be fully loaded
+        document.addEventListener('DOMContentLoaded', () => {
+            const container = document.getElementById('animationContainer');
+            const numShapes = 5; // Fixed number of shapes for this version
+
+            // Array of available style classes (original 5)
+            const animationStyles = ['style-1', 'style-2', 'style-3', 'style-4', 'style-5'];
+            let currentStyle = ''; // Variable to track the current style
+
+            // Function to create shape elements
+            function createShapes() {
+                // Clear existing shapes first
+                container.innerHTML = '';
+                // Removed logic for different shape counts and focus
+
+                for (let i = 1; i <= numShapes; i++) {
+                    const shape = document.createElement('div');
+                    shape.classList.add('shape');
+                    // Add specific shape class (shape-1, shape-2, etc.) for styling and placement/delay
+                    shape.classList.add(`shape-${i}`);
+
+                    // Removed random focus logic
+                    // Removed starfield positioning logic
+
+                    container.appendChild(shape);
+                }
+            }
+
+            // Function to apply a random animation style
+            function applyRandomStyle() {
+                // Remove the previous style class from the container, if any
+                if (currentStyle) {
+                    container.classList.remove(currentStyle);
+                }
+
+                // Select a new random style from the original 5
+                const randomIndex = Math.floor(Math.random() * animationStyles.length);
+                const newStyle = animationStyles[randomIndex];
+
+                // Apply the new style class to the container
+                container.classList.add(newStyle);
+                currentStyle = newStyle; // Update the current style tracker
+
+                // Re-create the 5 shapes
+                createShapes();
+            }
+
+            // --- Initialization ---
+            // Initial application of a random style on load
+            applyRandomStyle();
+
+            // --- Event Listener ---
+            // Add click listener to the whole body to change style
+            document.body.addEventListener('click', applyRandomStyle);
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gilbert's Co-op Adventure</title>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            background-color: #87CEEB;
+            font-family: 'Press Start 2P', cursive;
+            color: #333;
+            overflow: hidden;
+        }
+
+        #gameContainer {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            border: 8px solid #444;
+            border-radius: 15px;
+            background-color: #f0f0f0;
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+            padding: 10px;
+            max-width: 95%;
+        }
+
+        canvas {
+            display: block;
+            background-color: #ffffff;
+            border-radius: 8px;
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.1);
+            max-width: 100%;
+            height: auto;
+        }
+
+        /* Controls Styling */
+        #controls {
+            margin-top: 10px;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 5px;
+            font-size: 10px;
+            max-width: 100%;
+        }
+         #controls div {
+            display: flex;
+            gap: 5px;
+            border: 1px solid #ccc;
+            padding: 3px 5px;
+            border-radius: 6px;
+            margin-bottom: 3px;
+         }
+         #controls span {
+             font-weight: bold;
+             margin-right: 3px;
+             align-self: center;
+             font-size: 10px;
+         }
+
+        button.control-button {
+            font-family: 'Press Start 2P', cursive;
+            font-size: 10px;
+            padding: 5px 8px;
+            border: 2px solid #444;
+            border-radius: 8px;
+            background-color: #FFD700;
+            color: #444;
+            cursor: pointer;
+            box-shadow: 0 2px #999;
+            transition: all 0.1s ease;
+            user-select: none;
+            -webkit-user-select: none;
+            -ms-user-select: none;
+        }
+
+        button.control-button:active {
+            box-shadow: 0 1px #666;
+            transform: translateY(1px);
+            background-color: #f0c400;
+        }
+
+        #scoreBoard {
+            margin-top: 10px;
+            font-size: 18px;
+            color: #444;
+        }
+
+        #messageBox {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 30px;
+            border-radius: 15px;
+            font-size: 24px;
+            text-align: center;
+            display: none;
+            z-index: 10;
+            border: 5px solid #FFD700;
+        }
+        #messageBox button {
+             margin-top: 20px;
+             font-size: 16px;
+             padding: 10px 20px;
+        }
+
+    </style>
+</head>
+<body>
+    <h1>Gilbert's Co-op Adventure</h1>
+    <div id="gameContainer">
+        <canvas id="gameCanvas"></canvas>
+        <div id="scoreBoard">Score: 0</div>
+        <div id="controls">
+             <div>
+                 <span>P1:</span>
+                 <button id="p1LeftBtn" class="control-button">Left (←)</button>
+                 <button id="p1JumpBtn" class="control-button">Jump (↑)</button>
+                 <button id="p1RightBtn" class="control-button">Right (→)</button>
+             </div>
+              <div>
+                 <span>P2:</span>
+                 <button id="p2LeftBtn" class="control-button">Left (A)</button>
+                 <button id="p2JumpBtn" class="control-button">Jump (W)</button>
+                 <button id="p2RightBtn" class="control-button">Right (D)</button>
+             </div>
+        </div>
+    </div>
+
+    <div id="messageBox">
+        <p id="messageText"></p>
+        <button id="restartBtn">Restart</button>
+    </div>
+
+    <script>
+        // --- Game Setup ---
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreBoard = document.getElementById('scoreBoard');
+        const messageBox = document.getElementById('messageBox');
+        const messageText = document.getElementById('messageText');
+        const restartBtn = document.getElementById('restartBtn');
+        const p1LeftBtn = document.getElementById('p1LeftBtn');
+        const p1RightBtn = document.getElementById('p1RightBtn');
+        const p1JumpBtn = document.getElementById('p1JumpBtn');
+        const p2LeftBtn = document.getElementById('p2LeftBtn');
+        const p2RightBtn = document.getElementById('p2RightBtn');
+        const p2JumpBtn = document.getElementById('p2JumpBtn');
+
+        let initialCanvasWidth = 800;
+        let initialCanvasHeight = 400;
+        let canvasWidth = initialCanvasWidth;
+        let canvasHeight = initialCanvasHeight;
+        canvas.width = canvasWidth;
+        canvas.height = canvasHeight;
+
+        // --- Game State ---
+        let score = 0;
+        let keys = {};
+        let gameOver = false;
+        let gameWon = false;
+        let animationFrameId;
+
+        // --- Game Constants ---
+        const gravity = 0.5;
+        const jumpPower = -11;
+        const playerSpeed = 5;
+        const playerSize = 40;
+        const collectibleSize = 30;
+        const obstacleSize = 35;
+        const platformHeight = 20;
+        const maxJumpHeight = Math.abs(jumpPower * 15);
+        const maxJumpWidth = playerSpeed * 25;
+        // const minPlatformSpacing = 10; // Keep for reference, but removed from overlap check bounds
+
+        // --- Player Objects ---
+        const player1 = { id: 1, x: 0, y: 0, width: playerSize, height: playerSize, dx: 0, dy: 0, onGround: false, emoji: '🐈', facingRight: true, color: 'orange' };
+        const player2 = { id: 2, x: 0, y: 0, width: playerSize, height: playerSize, dx: 0, dy: 0, onGround: false, emoji: '🐈‍⬛', facingRight: true, color: 'black' };
+
+        // --- Game Elements (Dynamically Generated) ---
+        let platforms = [];
+        let collectibles = [];
+        let totalCollectibles = 0;
+        let obstacles = [];
+        let placedItems = []; // Includes platforms, collectibles, obstacles for overlap checks
+
+        // --- Random Number Helper ---
+        function random(min, max) { return Math.random() * (max - min) + min; }
+
+        // --- Collision Detection (AABB) ---
+        function checkCollision(rect1, rect2) {
+            if (!rect1 || !rect2) return false;
+            const buffer = 0.1;
+            return rect1.x < rect2.x + rect2.width - buffer &&
+                   rect1.x + rect1.width > rect2.x + buffer &&
+                   rect1.y < rect2.y + rect2.height - buffer &&
+                   rect1.y + rect1.height > rect2.y + buffer;
+        }
+
+        // --- Procedural Level Generation ---
+        function setupLevelElements() {
+            platforms = []; collectibles = []; obstacles = []; placedItems = []; totalCollectibles = 0;
+
+            // 1. Ground Platform
+            const groundPlatform = { x: 0, y: canvasHeight - platformHeight, width: canvasWidth, height: platformHeight, color: '#2E8B57', isPlatform: true };
+            platforms.push(groundPlatform);
+            placedItems.push(groundPlatform);
+
+            // 2. Procedurally Generate Floating Platforms Sequentially
+            let currentX = player1.x + player1.width + 80;
+            let currentY = canvasHeight - platformHeight - 60;
+            // *** MODIFIED: Increased attempts and max generated platforms ***
+            const numberOfPlatformsToTry = Math.floor(random(15, 25)); // Try generating more
+            let platformsGenerated = 0;
+            const maxPlatformsToGenerate = 20; // Higher limit
+
+            for (let i = 0; i < numberOfPlatformsToTry && platformsGenerated < maxPlatformsToGenerate; i++) {
+                // *** MODIFIED: Increased minimum horizontal distance slightly ***
+                const nextX = currentX + random(maxJumpWidth * 0.3, maxJumpWidth * 0.8); // Slightly larger min distance
+                const nextY = Math.max(60, Math.min(currentY + random(-maxJumpHeight * 0.8, maxJumpHeight * 0.6), canvasHeight - platformHeight * 4));
+                const nextWidth = random(70, 130);
+
+                if (nextX + nextWidth > canvasWidth - 50) continue;
+
+                // *** MODIFIED: Use exact bounds for overlap check (no extra spacing buffer) ***
+                const potentialPlatformBounds = { x: nextX, y: nextY, width: nextWidth, height: platformHeight };
+
+                // Check for overlap with existing platforms
+                let isOverlapping = false;
+                for (const existingItem of placedItems) {
+                    if (existingItem.isPlatform && checkCollision(potentialPlatformBounds, existingItem)) {
+                        isOverlapping = true;
+                        break;
+                    }
+                }
+                if (isOverlapping) {
+                    // console.log("Skipped platform generation due to overlap."); // Keep commented unless debugging
+                    continue; // Skip this attempt if overlapping
+                }
+
+                // Add the non-overlapping platform
+                const newPlatform = { x: nextX, y: nextY, width: nextWidth, height: platformHeight, color: '#A0522D', isPlatform: true };
+                platforms.push(newPlatform);
+                placedItems.push(newPlatform);
+                platformsGenerated++;
+
+                // Place Collectible (with overlap check against all items)
+                if (Math.random() < 0.6) {
+                    let placed = false;
+                    for (let attempt = 0; attempt < 3; attempt++) {
+                        const itemX = newPlatform.x + random(0, newPlatform.width - collectibleSize);
+                        const itemY = newPlatform.y - collectibleSize - 5;
+                        const newItemBounds = { x: itemX, y: itemY, width: collectibleSize, height: collectibleSize };
+                        let overlaps = false;
+                        for (const existingItem of placedItems) { if (checkCollision(newItemBounds, existingItem)) { overlaps = true; break; } }
+                        if (!overlaps) { collectibles.push({ ...newItemBounds, emoji: '🐟', collected: false }); placedItems.push(newItemBounds); placed = true; break; }
+                    }
+                }
+
+                // Place Obstacle (with overlap check against all items)
+                 if (Math.random() < 0.20) {
+                    let placed = false;
+                    for (let attempt = 0; attempt < 3; attempt++) {
+                        const itemX = newPlatform.x + random(0, newPlatform.width - obstacleSize);
+                        const itemY = newPlatform.y - obstacleSize;
+                        const newItemBounds = { x: itemX, y: itemY, width: obstacleSize, height: obstacleSize };
+                        let overlaps = false;
+                        for (const existingItem of placedItems) { if (checkCollision(newItemBounds, existingItem)) { overlaps = true; break; } }
+                         if (!overlaps) { obstacles.push({ ...newItemBounds, emoji: '🐁' }); placedItems.push(newItemBounds); placed = true; break; }
+                    }
+                 }
+                currentX = nextX; currentY = nextY;
+            }
+
+             // Add items on the ground platform (with overlap check against all items)
+             for(let i = 0; i < 4; i++) {
+                 const isObstacle = Math.random() < 0.3; const itemSize = isObstacle ? obstacleSize : collectibleSize; const itemEmoji = isObstacle ? '🐁' : '🐟'; let placed = false;
+                 for (let attempt = 0; attempt < 5; attempt++) {
+                     const groundX = random(canvasWidth * 0.15, canvasWidth * 0.9 - itemSize); const groundY = canvasHeight - platformHeight - itemSize - (isObstacle ? 0 : 5); const newItemBounds = { x: groundX, y: groundY, width: itemSize, height: itemSize }; let overlaps = false;
+                     for (const existingItem of placedItems) { if (checkCollision(newItemBounds, existingItem)) { overlaps = true; break; } }
+                     if (checkCollision(newItemBounds, {x: player1.x, y: player1.y, width: player1.width, height: player1.height}) || checkCollision(newItemBounds, {x: player2.x, y: player2.y, width: player2.width, height: player2.height})) { overlaps = true; }
+                     if (!overlaps) { if (isObstacle) { obstacles.push({ ...newItemBounds, emoji: itemEmoji }); } else { collectibles.push({ ...newItemBounds, emoji: itemEmoji, collected: false }); } placedItems.push(newItemBounds); placed = true; break; }
+                 }
+             }
+
+            totalCollectibles = collectibles.length;
+            console.log(`Level setup. Platforms Generated: ${platformsGenerated}, Collectibles: ${totalCollectibles}, Obstacles: ${obstacles.length}`);
+            if (totalCollectibles === 0 && platforms.length > 1) { console.log("No collectibles generated, adding one."); collectibles.push({ x: platforms[1].x + 20, y: platforms[1].y - collectibleSize - 5, width: collectibleSize, height: collectibleSize, emoji: '🐟', collected: false }); totalCollectibles = 1; }
+        }
+
+
+        // --- Drawing Functions ---
+        function drawPlayer(playerToDraw) { /* ... same as before ... */ ctx.save(); try { const pcX = playerToDraw.x + playerToDraw.width / 2; const pcY = playerToDraw.y + playerToDraw.height / 2; ctx.translate(pcX, pcY); if (playerToDraw.facingRight) { ctx.scale(-1, 1); } ctx.font = `${playerToDraw.height}px Arial`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(playerToDraw.emoji, 0, 5); } finally { ctx.restore(); } }
+        function drawPlatforms() { /* ... same as before ... */ platforms.forEach(p => { ctx.fillStyle = p.color; ctx.fillRect(p.x, p.y, p.width, p.height); ctx.strokeStyle = '#444'; ctx.lineWidth = 2; ctx.strokeRect(p.x, p.y, p.width, p.height); }); }
+        function drawCollectibles() { /* ... same as before ... */ ctx.font = `${collectibleSize}px Arial`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; collectibles.forEach(c => { if (!c.collected) { ctx.fillText(c.emoji, c.x + c.width / 2, c.y + c.height / 2); } }); }
+        function drawObstacles() { /* ... same as before ... */ ctx.font = `${obstacleSize}px Arial`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; obstacles.forEach(o => { ctx.fillText(o.emoji, o.x + o.width / 2, o.y + o.height / 2); }); }
+
+        // --- Update Player Logic (Helper Function) ---
+        function updatePlayer(playerObj, otherPlayer, leftKey, rightKey, jumpKey) { /* ... same as before ... */
+            playerObj.dx = 0;
+            if (keys[leftKey]) { playerObj.dx = -playerSpeed; playerObj.facingRight = false; }
+            if (keys[rightKey]) { playerObj.dx = playerSpeed; playerObj.facingRight = true; }
+            playerObj.dy += gravity;
+            playerObj.y += playerObj.dy;
+            playerObj.onGround = false;
+            playerObj.x += playerObj.dx;
+
+            // Player-Player Collision
+            if (otherPlayer && checkCollision(playerObj, otherPlayer)) {
+                if (playerObj.dy >= 0 && (playerObj.y + playerObj.height - playerObj.dy) <= otherPlayer.y + 1) {
+                     if (playerObj.y + playerObj.height > otherPlayer.y) { playerObj.y = otherPlayer.y - playerObj.height; playerObj.dy = 0; playerObj.onGround = true; }
+                }
+            }
+            // Platform Collision
+            platforms.forEach(p => {
+                if (checkCollision(playerObj, p)) {
+                    if (playerObj.dy >= 0 && (playerObj.y + playerObj.height - playerObj.dy) <= p.y + 1) {
+                        if (!playerObj.onGround) { playerObj.y = p.y - playerObj.height; playerObj.dy = 0; playerObj.onGround = true; }
+                        else if(playerObj.y > p.y - playerObj.height) { playerObj.y = p.y - playerObj.height; }
+                    }
+                    else if (playerObj.dx > 0 && (playerObj.x + playerObj.width - playerObj.dx) <= p.x) { playerObj.x = p.x - playerObj.width; }
+                    else if (playerObj.dx < 0 && (playerObj.x - playerObj.dx) >= p.x + p.width) { playerObj.x = p.x + p.width; }
+                }
+            });
+            // Boundary Checks
+            if (playerObj.y + playerObj.height > canvasHeight) {
+                if (playerObj.y > canvasHeight - playerObj.height + 1) { console.log(`Player ${playerObj.id} fell off bottom!`); endGame(false); return true; }
+                else { playerObj.y = canvasHeight - playerObj.height; playerObj.dy = 0; playerObj.onGround = true; }
+            }
+             if (playerObj.x < 0) playerObj.x = 0; if (playerObj.x + playerObj.width > canvasWidth) playerObj.x = canvasWidth - playerObj.width;
+            // Collectible Collision
+            let collectedLast = false; collectibles.forEach((c) => { if (!c.collected && checkCollision(playerObj, c)) { c.collected = true; score++; scoreBoard.textContent = `Score: ${score}`; if (score === totalCollectibles && totalCollectibles > 0) { collectedLast = true; } } }); if (collectedLast) { endGame(true); return true; }
+            // Obstacle Collision
+            for (const o of obstacles) { if (checkCollision(playerObj, o)) { console.log(`Player ${playerObj.id} hit obstacle!`); endGame(false); return true; } }
+            return false;
+         }
+
+        // --- Main Update Game State ---
+        function update() { if (gameOver || gameWon) return; updatePlayer(player1, player2, 'ArrowLeft', 'ArrowRight', 'ArrowUp'); updatePlayer(player2, player1, 'a', 'd', 'w'); }
+        // --- Render Frame ---
+        function draw() { ctx.clearRect(0, 0, canvasWidth, canvasHeight); drawPlatforms(); drawCollectibles(); drawObstacles(); drawPlayer(player1); drawPlayer(player2); }
+        // --- Game Loop ---
+        function gameLoop() { update(); draw(); if (!gameOver && !gameWon) { animationFrameId = requestAnimationFrame(gameLoop); } }
+        // --- Event Listeners ---
+        window.addEventListener('keydown', (e) => { const key = e.key.toLowerCase(); keys[key] = true; keys[e.key] = true; if ((key === 'arrowup' || key === ' ') && player1.onGround) { player1.dy = jumpPower; player1.onGround = false; } if ((key === 'w') && player2.onGround) { player2.dy = jumpPower; player2.onGround = false; } });
+        window.addEventListener('keyup', (e) => { const key = e.key.toLowerCase(); keys[key] = false; keys[e.key] = false; });
+        // --- Button Controls ---
+        p1LeftBtn.addEventListener('pointerdown', (e) => { keys['ArrowLeft'] = true; e.preventDefault(); }); p1LeftBtn.addEventListener('pointerup', () => keys['ArrowLeft'] = false); p1LeftBtn.addEventListener('pointerleave', () => keys['ArrowLeft'] = false); p1RightBtn.addEventListener('pointerdown', (e) => { keys['ArrowRight'] = true; e.preventDefault(); }); p1RightBtn.addEventListener('pointerup', () => keys['ArrowRight'] = false); p1RightBtn.addEventListener('pointerleave', () => keys['ArrowRight'] = false); p1JumpBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); if (player1.onGround) { player1.dy = jumpPower; player1.onGround = false; } }); p2LeftBtn.addEventListener('pointerdown', (e) => { keys['a'] = true; e.preventDefault(); }); p2LeftBtn.addEventListener('pointerup', () => keys['a'] = false); p2LeftBtn.addEventListener('pointerleave', () => keys['a'] = false); p2RightBtn.addEventListener('pointerdown', (e) => { keys['d'] = true; e.preventDefault(); }); p2RightBtn.addEventListener('pointerup', () => keys['d'] = false); p2RightBtn.addEventListener('pointerleave', () => keys['d'] = false); p2JumpBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); if (player2.onGround) { player2.dy = jumpPower; player2.onGround = false; } });
+        restartBtn.addEventListener('click', restartGame);
+        // --- Game Flow Functions ---
+        function startGame() { console.log("Starting game..."); score = 0; gameOver = false; gameWon = false; keys = {}; scoreBoard.textContent = `Score: ${score}`; messageBox.style.display = 'none'; player1.x = 40; player1.y = canvasHeight - platformHeight - player1.height - 1; player1.dx = 0; player1.dy = 0; player1.onGround = true; player1.facingRight = true; player2.x = 80; player2.y = canvasHeight - platformHeight - player2.height - 1; player2.dx = 0; player2.dy = 0; player2.onGround = true; player2.facingRight = true; setupLevelElements(); cancelAnimationFrame(animationFrameId); animationFrameId = requestAnimationFrame(gameLoop); }
+        function endGame(won) { if (gameOver || gameWon) return; cancelAnimationFrame(animationFrameId); animationFrameId = null; if (won) { gameWon = true; messageText.textContent = `You Win! New Level! Score: ${score}`; } else { gameOver = true; messageText.textContent = `Game Over! Try again? Score: ${score}`; } console.log(won ? "Game Won!" : "Game Over!"); messageBox.style.display = 'block'; }
+        function restartGame() { startGame(); }
+        // --- Responsive Canvas ---
+        function resizeCanvas() { const container = document.getElementById('gameContainer'); const aspectRatio = initialCanvasWidth / initialCanvasHeight; let newWidth = container.clientWidth - 20; if (newWidth < 400) newWidth = 400; let newHeight = newWidth / aspectRatio; const maxCanvasHeight = window.innerHeight * 0.7; if (newHeight > maxCanvasHeight) { newHeight = maxCanvasHeight; newWidth = newHeight * aspectRatio; } canvas.width = newWidth; canvas.height = newHeight; canvasWidth = newWidth; canvasHeight = newHeight; console.log("Resized canvas to:", canvasWidth, canvasHeight); if (animationFrameId || gameOver || gameWon) { console.log("Restarting game due to resize."); startGame(); } else { player1.y = canvasHeight - platformHeight - player1.height - 1; player2.y = canvasHeight - platformHeight - player2.height - 1; setupLevelElements(); } }
+        // Initial setup and start
+        window.addEventListener('resize', resizeCanvas);
+        window.onload = () => { resizeCanvas(); startGame(); };
+    </script>
+</body>
+</html>

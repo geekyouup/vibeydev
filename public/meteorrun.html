@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meteor Run</title>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Press Start 2P', monospace;
+            color: #fff;
+        }
+        canvas {
+            background-color: #000;
+            border: 2px solid #0f0;
+        }
+        #controls {
+            position: absolute;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 10px;
+            z-index: 10;
+        }
+        #controls button {
+            padding: 8px 15px;
+            font-size: 12px;
+            background-color: #0f0;
+            color: #000;
+            border: none;
+            cursor: pointer;
+            border-radius: 3px;
+            box-shadow: 0 0 5px #0f0, 0 0 10px #0f0, 0 0 15px #0f0;
+        }
+        #controls button:hover {
+            opacity: 0.8;
+        }
+        #message {
+            position: absolute;
+            top: 50px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 24px;
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 10px 20px;
+            border-radius:5px;
+            display: none;
+            z-index: 10;
+        }
+        #score {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            font-size: 18px;
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 5px 10px;
+            border-radius: 5px;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <div id="controls">
+        <button id="startButton">Start Game</button>
+        <button id="pauseButton">Pause</button>
+        <button id="restartButton">Restart</button>
+    </div>
+    <div id="message"></div>
+    <div id="score">Score: 0</div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const startButton = document.getElementById('startButton');
+        const pauseButton = document.getElementById('pauseButton');
+        const restartButton = document.getElementById('restartButton');
+        const messageDiv = document.getElementById('message');
+        const scoreDiv = document.getElementById('score');
+
+        let gameRunning = false;
+        let gamePaused = false;
+        let animationFrameId;
+        let stars = [];
+        let score = 0;
+
+        // Spaceship properties
+        const spaceship = {
+            x: canvas.width / 2,
+            y: canvas.height - 50,
+            width: 30,
+            height: 20,
+            color: '#0f0',
+            speedX: 0,
+            speedY: 0,
+            thrust: 0.1,
+            friction: 0.98,
+            rotation: 0,
+            rotationSpeed: 0.05,
+            maxSpeed: 5,
+            draw: function() {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.rotation);ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.moveTo(-this.width / 2, -this.height / 2);
+                ctx.lineTo(this.width / 2, -this.height / 2);
+                ctx.lineTo(0, this.height / 2);
+                ctx.closePath();
+                ctx.fill();
+
+                // Simple engine glow
+                ctx.fillStyle = '#f00';
+                ctx.beginPath();
+                ctx.moveTo(-this.width / 4, this.height / 2);
+                ctx.lineTo(0, this.height / 2 + 10);
+                ctx.lineTo(this.width / 4, this.height / 2);
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.restore();
+            },
+            update: function() {
+                // Apply thrust
+                if (keysPressed['ArrowUp']) {
+                    this.speedY -= Math.cos(this.rotation) * this.thrust;
+                    this.speedX += Math.sin(this.rotation) * this.thrust;
+                }
+
+                // Apply friction
+                this.speedX *= this.friction;
+                this.speedY *= this.friction;
+
+                // Limit speed
+                const currentSpeed = Math.sqrt(this.speedX * this.speedX + this.speedY * this.speedY);
+                if (currentSpeed > this.maxSpeed) {
+                    const ratio = this.maxSpeed / currentSpeed;
+                    this.speedX *= ratio;
+                    this.speedY *= ratio;
+                }
+
+                // Update position
+                this.x += this.speedX;
+                this.y += this.speedY;
+
+                // Handle rotation
+                if (keysPressed['ArrowLeft']) {
+                    this.rotation -= this.rotationSpeed;
+                }
+                if (keysPressed['ArrowRight']) {
+                    this.rotation += this.rotationSpeed;
+                }
+
+                // Wrap around screen
+                if (this.x < 0) {
+                    this.x = canvas.width;
+                }
+                if (this.x > canvas.width) {
+                    this.x = 0;
+                }
+                if (this.y < 0) {                    this.y = canvas.height;
+                }
+                if (this.y > canvas.height) {
+                    this.y = 0;
+                }
+            }
+        };
+
+        // Star class
+        class Star {
+            constructor(x, y, radius, color, speed) {
+                this.x = x;
+                this.y = y;
+                this.radius = radius;
+                this.color = color;
+                this.speed = speed;
+                this.passed = false;
+            }
+
+            draw() {
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            update() {
+                this.y += this.speed;
+                // Reset star if it goes off screen
+                if (this.y > canvas.height) {
+                    this.y = -this.radius * 2;
+                    this.x = Math.random() * (canvas.width - this.radius * 2) + this.radius;
+                    this.passed = false; // Reset passed status
+                }
+            }
+
+            checkCollision(obj) {
+                const dx = obj.x - this.x;
+                const dy = obj.y - this.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                return distance < this.radius + obj.width / 2;
+            }
+        }
+
+        // Keyboard controls
+        const keysPressed = {};
+        document.addEventListener('keydown', (e) => {
+            keysPressed[e.key] = true;
+        });
+        document.addEventListener('keyup', (e) => {
+            keysPressed[e.key] = false;
+        });
+
+        // Game loop
+        function gameLoop() {
+            if (!gameRunning || gamePaused) {
+                animationFrameId = requestAnimationFrame(gameLoop);
+                return;
+            }
+
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Update and draw spaceship
+            spaceship.update();
+            spaceship.draw();
+
+            // Update and draw stars
+            stars.forEach(star => {
+                star.update();
+                star.draw();
+                // Check for collision
+                if (star.checkCollision(spaceship)) {
+                    gameOver();
+                }
+
+                // Check if spaceship has passed the star
+                if (!star.passed && spaceship.y > star.y + star.radius) {
+                    score++;
+                    scoreDiv.textContent = `Score: ${score}`;
+                    star.passed = true; // Mark as passed
+                }
+            });
+
+            // Request next frame
+            animationFrameId = requestAnimationFrame(gameLoop);
+        }
+
+        // Create stars
+        function createStar() {
+            const radius = Math.random() * 15 + 5;
+            const x = Math.random() * (canvas.width - radius * 2) + radius;
+            const y = -Math.random() * canvas.height; // Start off-screen above
+            const speed = Math.random() * 3 + 1;
+            const color = '#fff';
+            stars.push(new Star(x, y, radius, color, speed));
+        }
+
+        // Button functions
+        function startGame() {
+            if (!gameRunning) {
+                gameRunning = true;
+                gamePaused = false;
+                messageDiv.style.display = 'none';
+                startButton.textContent = 'Restart Game';
+                pauseButton.textContent = 'Pause';
+                pauseButton.disabled = false;
+                // Reset spaceship state if restarting
+                spaceship.x = canvas.width / 2;
+                spaceship.y = canvas.height - 50;
+                spaceship.speedX = 0;
+                spaceship.speedY = 0;
+                spaceship.rotation = 0;
+                // Reset stars and score
+                stars = [];
+                score = 0;
+                scoreDiv.textContent = `Score: ${score}`;
+                for (let i = 0; i < 5; i++) { // Create initial stars
+                    createStar();
+                }
+                gameLoop();
+            }
+        }
+
+        function pauseGame() {
+            if (gameRunning) {
+                gamePaused = !gamePaused;
+                if (gamePaused) {
+                    pauseButton.textContent = 'Resume';
+                    messageDiv.textContent = 'GAME PAUSED';
+                    messageDiv.style.display = 'block';
+                } else {
+                    pauseButton.textContent = 'Pause';
+                    messageDiv.style.display = 'none';
+                    //gameLoop(); // Resume the loop
+                }
+            }
+        }
+
+        function restartGame() {
+            gameRunning = true;
+            gamePaused = false;
+            messageDiv.style.display = 'none';
+            startButton.textContent = 'Restart Game';
+            pauseButton.textContent = 'Pause';
+            pauseButton.disabled = false;
+            // Reset spaceship state
+            spaceship.x = canvas.width / 2;
+            spaceship.y = canvas.height - 50;
+            spaceship.speedX = 0;
+            spaceship.speedY = 0;
+            spaceship.rotation = 0;
+            // Reset stars and score
+            stars = [];
+            score = 0;
+            scoreDiv.textContent = `Score: ${score}`;
+            for (let i = 0; i < 5; i++) { // Create initial stars
+                    createStar();
+            }
+            //gameLoop();
+        }
+
+        function gameOver() {
+            gameRunning = false;
+            gamePaused = false;
+            messageDiv.textContent = 'GAME OVER!';
+            messageDiv.style.display = 'block';
+            pauseButton.disabled = true; // Disable pause during game over
+            cancelAnimationFrame(animationFrameId); // Stop animation
+        }
+
+        // Event listeners for buttons
+        
+        startButton.addEventListener('click', startGame);
+        pauseButton.addEventListener('click', pauseGame);
+        restartButton.addEventListener('click', restartGame);
+        
+        // Initial state
+        pauseButton.disabled = true;
+        messageDiv.textContent = 'Click "Start Game" to begin.';
+        messageDiv.style.display = 'block';
+
+    </script>
+</body>
+</html>

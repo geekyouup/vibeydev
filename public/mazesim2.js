@@ -1,0 +1,872 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Maze Flight Simulator</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #000;
+            font-family: 'Inter', sans-serif; /* Using Inter font */
+            color: #fff;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            flex-direction: column;
+        }
+        #container {
+            width: 100%;
+            max-width: 100vw; /* Ensure it doesn't exceed viewport width */
+            height: 90vh;    /* Adjust height as needed */
+            position: relative;
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            border-radius: 8px; /* Rounded corners for the canvas */
+        }
+        #instructions {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            z-index: 10;
+            line-height: 1.4; /* Improve readability */
+        }
+        #messageBox {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(0, 150, 255, 0.8);
+            padding: 20px 40px;
+            border-radius: 10px;
+            font-size: 24px;
+            text-align: center;
+            display: none; /* Hidden by default */
+            z-index: 20;
+            box-shadow: 0 4px 15px rgba(0, 150, 255, 0.5);
+        }
+    </style>
+</head>
+<body>
+    <div id="instructions">
+        Controls:<br>
+        W/S: Forward/Backward Thrusters<br>
+        A/D: Strafe Left/Right<br>
+        Q/E: Roll Left/Right<br>
+        R/F: Ascend/Descend<br>
+        Arrow Up/Down: Pitch Up/Down<br>
+        Arrow Left/Right: Yaw Left/Right<br>
+        Space: Brake<br>
+        C: Change Camera (Follow/First Person)
+    </div>
+    <div id="container">
+        <canvas id="gameCanvas"></canvas>
+    </div>
+    <div id="messageBox">Goal Reached!</div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
+
+    <script>
+        console.log("Script starting...");
+
+        // --- Global Variables ---
+        let scene, camera, renderer, spaceship, spaceshipBody;
+        let world; // Cannon.js physics world
+        let controls = {}; // Keyboard state
+        const clock = new THREE.Clock();
+        let maze = [];
+        const mazeSize = 10; // Size of the maze grid (e.g., 10x10x10)
+        const cellSize = 20; // Size of each cell in world units
+        const wallThickness = 2;
+        const wallHeight = cellSize;
+        let goalPosition;
+        let goalObject;
+        let particles_thrust_main, particles_thrust_left, particles_thrust_right;
+        let cameraMode = 'firstPerson'; // 'follow' or 'firstPerson'
+        const followCameraOffset = new THREE.Vector3(0, 8, -20); // Camera position relative to ship
+        let animationFrameId; // To potentially stop the loop on error
+
+        // --- Initialization ---
+        function init() {
+            try {
+                console.log("init() called");
+
+                // Basic Three.js Setup
+                console.log("Setting up Scene...");
+                scene = new THREE.Scene();
+                scene.background = new THREE.Color(0x111122); // Dark space blue
+                scene.fog = new THREE.Fog(0x111122, cellSize * mazeSize * 0.3, cellSize * mazeSize * 0.8);
+
+                console.log("Setting up Renderer...");
+                const canvas = document.getElementById('gameCanvas');
+                if (!canvas) throw new Error("Canvas element #gameCanvas not found!");
+                renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+                // Ensure initial size is read correctly
+                const container = document.getElementById('container');
+                renderer.setSize(container.clientWidth, container.clientHeight);
+                renderer.shadowMap.enabled = true;
+                console.log("Renderer created:", renderer);
+
+                // Physics World
+                console.log("Setting up Physics World...");
+                if (typeof CANNON === 'undefined') throw new Error("Cannon.js library not loaded!");
+                world = new CANNON.World();
+                world.gravity.set(0, 0, 0);
+                world.broadphase = new CANNON.NaiveBroadphase();
+                world.solver.iterations = 10;
+
+                // Camera
+                console.log("Setting up Camera...");
+                camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.1, 1000);
+                camera.position.set(0, 20, -30); // Set an initial default position (will be updated)
+                camera.lookAt(0, 0, 0); // Look towards the origin initially
+                console.log("Camera created:", camera);
+
+
+                // Lighting
+                console.log("Setting up Lighting...");
+                const ambientLight = new THREE.AmbientLight(0x606080);
+                scene.add(ambientLight);
+                const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+                directionalLight.position.set(15, 30, 20);
+                directionalLight.castShadow = true;
+                directionalLight.shadow.mapSize.width = 1024;
+                directionalLight.shadow.mapSize.height = 1024;
+                scene.add(directionalLight);
+                console.log("Lighting added.");
+
+                // Maze Generation
+                console.log("Generating Maze Structure...");
+                generateMazeStructure();
+                console.log("Creating Maze Mesh...");
+                createMazeMesh();
+                console.log("Creating Goal...");
+                createGoal();
+
+                // Spaceship
+                console.log("Creating Spaceship...");
+                createSpaceship();
+                 // Ensure camera is updated AFTER spaceship creation
+                console.log("Updating initial camera position...");
+                updateCameraPosition(); // This will now use the 'firstPerson' mode
+
+
+                // Thrusters
+                console.log("Creating Thrusters...");
+                createThrusters();
+
+                // Controls
+                console.log("Setting up Controls...");
+                setupControls();
+
+                // Handle Window Resize
+                console.log("Setting up Resize Listener...");
+                window.addEventListener('resize', onWindowResize, false);
+                onWindowResize(); // Initial call to set size
+
+                console.log("Initialization complete. Starting animation loop...");
+                // Start Game Loop
+                animate();
+
+            } catch (error) {
+                console.error("Error during initialization:", error);
+                // Display error to the user potentially
+                 const container = document.getElementById('container');
+                 if(container) {
+                     container.innerHTML = `<p style="color: red; padding: 20px; text-align: center;">Error initializing game: ${error.message}<br>Check console (F12) for details.</p>`;
+                 }
+                 if (animationFrameId) {
+                    cancelAnimationFrame(animationFrameId); // Stop loop if it somehow started
+                 }
+            }
+        }
+
+        // --- Maze Generation (Simplified Placeholder) ---
+        function generateMazeStructure() {
+            try {
+                // Initialize maze grid
+                maze = new Array(mazeSize).fill(null).map(() =>
+                    new Array(mazeSize).fill(null).map(() =>
+                        new Array(mazeSize).fill(false) // false = wall, true = path
+                    )
+                );
+
+                // Simple generation: Carve out a basic path
+                function carve(x, y, z) {
+                    if (x < 0 || x >= mazeSize || y < 0 || y >= mazeSize || z < 0 || z >= mazeSize || maze[x][y][z]) {
+                        return;
+                    }
+                    maze[x][y][z] = true; // Mark as path
+
+                    const dirs = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
+                    dirs.sort(() => Math.random() - 0.5);
+
+                    for (const [dx, dy, dz] of dirs) {
+                         if (Math.random() < 0.4) {
+                             carve(x + dx, y + dy, z + dz);
+                         }
+                    }
+                }
+
+                const startX = Math.floor(mazeSize / 2);
+                const startY = Math.floor(mazeSize / 2);
+                const startZ = Math.floor(mazeSize / 2);
+                carve(startX, startY, startZ);
+
+                 maze[0][startY][startZ] = true; // Entrance
+                 maze[mazeSize-1][startY][startZ] = true; // Exit
+
+                 for (let i = 0; i < mazeSize * 2; i++) {
+                     let rx = Math.floor(Math.random() * mazeSize);
+                     let ry = Math.floor(Math.random() * mazeSize);
+                     let rz = Math.floor(Math.random() * mazeSize);
+                     if (maze[rx][ry][rz]) {
+                         if (Math.random() < 0.5 && ry > 0) maze[rx][ry-1][rz] = true;
+                         if (Math.random() < 0.5 && ry < mazeSize - 1) maze[rx][ry+1][rz] = true;
+                     }
+                 }
+
+                // Define goal position (relative to world origin)
+                const goalMazeX = mazeSize - 1; // Goal at the end
+                const goalMazeY = startY;
+                const goalMazeZ = startZ;
+                goalPosition = new THREE.Vector3(
+                    (goalMazeX - mazeSize / 2 + 0.5) * cellSize,
+                    (goalMazeY - mazeSize / 2 + 0.5) * cellSize,
+                    (goalMazeZ - mazeSize / 2 + 0.5) * cellSize
+                );
+                 console.log("Goal Position:", goalPosition);
+
+
+            } catch (error) {
+                console.error("Error in generateMazeStructure:", error);
+                throw error; // Re-throw to be caught by init's catch block
+            }
+        }
+
+        function createMazeMesh() {
+             try {
+                const wallMaterial = new THREE.MeshStandardMaterial({
+                    color: 0x888899,
+                    metalness: 0.3,
+                    roughness: 0.8,
+                });
+                const wallGeometry = new THREE.BoxGeometry(cellSize, wallHeight, wallThickness);
+                const wallGeometryZ = new THREE.BoxGeometry(wallThickness, wallHeight, cellSize);
+                const floorCeilingGeometry = new THREE.BoxGeometry(cellSize, wallThickness, cellSize);
+
+                const halfCell = cellSize / 2;
+                const halfWall = wallThickness / 2;
+
+                let wallCount = 0; // Debugging counter
+
+                for (let x = 0; x < mazeSize; x++) {
+                    for (let y = 0; y < mazeSize; y++) {
+                        for (let z = 0; z < mazeSize; z++) {
+                            if (!maze[x][y][z]) { // Only draw walls *around* path cells
+                                continue;
+                            }
+
+                            const cellCenter = new THREE.Vector3(
+                                (x - mazeSize / 2 + 0.5) * cellSize,
+                                (y - mazeSize / 2 + 0.5) * cellSize,
+                                (z - mazeSize / 2 + 0.5) * cellSize
+                            );
+
+                            // Check neighbors to draw walls
+                            // Draw wall if neighbor is outside bounds OR is a wall (false)
+
+                            // Wall in -Z direction
+                            if (z === 0 || !maze[x][y][z - 1]) {
+                                addWall(cellCenter.x, cellCenter.y, cellCenter.z - halfCell, wallGeometry.clone(), wallMaterial); wallCount++;
+                            }
+                             // Wall in +Z direction (only check if not on edge)
+                             if (z === mazeSize - 1 || (z < mazeSize -1 && !maze[x][y][z + 1])) {
+                                 // Only add if the neighbor check didn't already add it from the other side
+                                 if (z < mazeSize - 1) {
+                                      addWall(cellCenter.x, cellCenter.y, cellCenter.z + halfCell, wallGeometry.clone(), wallMaterial); wallCount++;
+                                 }
+                             }
+
+                            // Wall in -X direction
+                            if (x === 0 || !maze[x - 1][y][z]) {
+                                addWall(cellCenter.x - halfCell, cellCenter.y, cellCenter.z, wallGeometryZ.clone(), wallMaterial); wallCount++;
+                            }
+                             // Wall in +X direction
+                             if (x === mazeSize - 1 || (x < mazeSize -1 && !maze[x + 1][y][z])) {
+                                 if (x < mazeSize - 1) {
+                                     addWall(cellCenter.x + halfCell, cellCenter.y, cellCenter.z, wallGeometryZ.clone(), wallMaterial); wallCount++;
+                                 }
+                             }
+
+                            // Floor (-Y direction)
+                            if (y === 0 || !maze[x][y - 1][z]) {
+                                 addFloorCeiling(cellCenter.x, cellCenter.y - halfCell, cellCenter.z, floorCeilingGeometry.clone(), wallMaterial); wallCount++;
+                            }
+                             // Ceiling (+Y direction)
+                             if (y === mazeSize - 1 || (y < mazeSize - 1 && !maze[x][y + 1][z])) {
+                                 if (y < mazeSize - 1) {
+                                     addFloorCeiling(cellCenter.x, cellCenter.y + halfCell, cellCenter.z, floorCeilingGeometry.clone(), wallMaterial); wallCount++;
+                                 }
+                             }
+                        }
+                    }
+                }
+                 console.log(`Added ${wallCount} wall/floor/ceiling segments.`);
+
+                 // Add boundary walls
+                const boundarySize = mazeSize * cellSize;
+                const boundaryHalf = boundarySize / 2;
+                // Calculate the center Y position of the maze grid itself
+                const mazeGridCenterY = (mazeSize / 2 - 0.5) * cellSize;
+                // Calculate the total height of the maze grid
+                const mazeGridHeight = mazeSize * cellSize; // Assuming wallHeight is cellSize
+
+                const boundaryMaterial = new THREE.MeshStandardMaterial({
+                    color: 0x666677,
+                    metalness: 0.2,
+                    roughness: 0.9,
+                    side: THREE.BackSide // Render inside face for boundaries
+                });
+
+                 // Adjust Y positions to be relative to the maze grid center Y
+                 const floorY = mazeGridCenterY - halfCell - halfWall;
+                 const ceilingY = mazeGridCenterY + (mazeSize - 1) * cellSize + halfCell + halfWall; // Corrected ceiling calculation
+                 const sideWallCenterY = (floorY + ceilingY) / 2; // Center the side walls vertically
+                 const sideWallHeight = ceilingY - floorY; // Height of the side walls
+
+
+                // Floor
+                addWall(0, floorY, 0, new THREE.BoxGeometry(boundarySize, wallThickness, boundarySize), boundaryMaterial, false);
+                // Ceiling
+                addWall(0, ceilingY, 0, new THREE.BoxGeometry(boundarySize, wallThickness, boundarySize), boundaryMaterial, false);
+                 // Side Walls
+                addWall(0, sideWallCenterY, -boundaryHalf - halfWall, new THREE.BoxGeometry(boundarySize, sideWallHeight, wallThickness), boundaryMaterial, false); // Back
+                addWall(0, sideWallCenterY, boundaryHalf + halfWall, new THREE.BoxGeometry(boundarySize, sideWallHeight, wallThickness), boundaryMaterial, false); // Front
+                addWall(-boundaryHalf - halfWall, sideWallCenterY, 0, new THREE.BoxGeometry(wallThickness, sideWallHeight, boundarySize), boundaryMaterial, false); // Left
+                addWall(boundaryHalf + halfWall, sideWallCenterY, 0, new THREE.BoxGeometry(wallThickness, sideWallHeight, boundarySize), boundaryMaterial, false); // Right
+
+
+                console.log("Boundary walls added.");
+
+
+            } catch (error) {
+                console.error("Error in createMazeMesh:", error);
+                throw error;
+            }
+        }
+
+        function addWall(x, y, z, geometry, material, addToPhysics = true) {
+            const wallMesh = new THREE.Mesh(geometry, material);
+            wallMesh.position.set(x, y, z);
+            wallMesh.castShadow = true;
+            wallMesh.receiveShadow = true;
+            scene.add(wallMesh);
+
+            if (addToPhysics && world) {
+                try {
+                    // Make sure geometry parameters are accessible
+                    const params = geometry.parameters;
+                    if (!params || !params.width || !params.height || !params.depth) {
+                         console.warn(`Skipping physics for wall at ${x},${y},${z}: Geometry parameters missing.`);
+                         return;
+                    }
+
+                    const shape = new CANNON.Box(new CANNON.Vec3(
+                        params.width / 2,
+                        params.height / 2,
+                        params.depth / 2
+                    ));
+                    const body = new CANNON.Body({ mass: 0 }); // Static body
+                    body.addShape(shape);
+                    body.position.set(x, y, z);
+                     // Ensure quaternion is initialized correctly for static bodies
+                     body.quaternion.set(0,0,0,1);
+                     body.updateMassProperties(); // Good practice
+                    world.addBody(body);
+                } catch(physicsError) {
+                    console.warn(`Physics body creation failed for wall at ${x},${y},${z}:`, physicsError);
+                    // Decide if this should be fatal or just a warning
+                }
+            }
+        }
+         function addFloorCeiling(x, y, z, geometry, material, addToPhysics = true) {
+             addWall(x, y, z, geometry, material, addToPhysics); // Reuse addWall logic
+         }
+
+        // --- Spaceship ---
+        function createSpaceship() {
+             try {
+                const shipGeometry = new THREE.ConeGeometry(2, 8, 8);
+                const shipMaterial = new THREE.MeshPhongMaterial({
+                    color: 0xff4444,
+                    shininess: 100,
+                    specular: 0xaaaaaa
+                });
+                spaceship = new THREE.Mesh(shipGeometry, shipMaterial);
+                spaceship.castShadow = true;
+                // Rotate the cone so the pointy end faces positive Z in its local space
+                spaceship.rotation.z = Math.PI;
+
+
+                // Initial position inside the maze entrance cell
+                const startMazeX = 0; // Start at the beginning edge
+                const startMazeY = Math.floor(mazeSize / 2);
+                const startMazeZ = Math.floor(mazeSize / 2);
+                // Calculate center of the starting cell
+                const startCellCenterX = (startMazeX - mazeSize / 2 + 0.5) * cellSize;
+                const startCellCenterY = (startMazeY - mazeSize / 2 + 0.5) * cellSize;
+                const startCellCenterZ = (startMazeZ - mazeSize / 2 + 0.5) * cellSize;
+                // Position *at* the center of the entrance cell
+                const initialPosition = new THREE.Vector3(
+                    startCellCenterX,
+                    startCellCenterY,
+                    startCellCenterZ
+                );
+                 console.log("Spaceship Initial Position (Inside Maze):", initialPosition);
+
+
+                // Physics Body for Spaceship
+                const shipShape = new CANNON.Sphere(3); // Collision sphere radius
+                spaceshipBody = new CANNON.Body({ mass: 5 });
+                spaceshipBody.addShape(shipShape);
+                spaceshipBody.position.copy(initialPosition);
+                // Set initial orientation to match the mesh's rotation
+                const initialQuaternion = new CANNON.Quaternion();
+                initialQuaternion.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), Math.PI / 2); // Match THREE rotation
+                spaceshipBody.quaternion.copy(initialQuaternion);
+
+                spaceshipBody.angularDamping = 0.2; // Keep reduced damping
+                spaceshipBody.linearDamping = 0.5;
+
+                // Initialize torque vector
+                spaceshipBody.torque = new CANNON.Vec3(0, 0, 0);
+                world.addBody(spaceshipBody);
+
+                spaceshipBody.updateMassProperties(); // Ensure inertia is calculated
+
+                // Link mesh position to physics body - initial sync
+                spaceship.position.copy(spaceshipBody.position);
+                spaceship.quaternion.copy(spaceshipBody.quaternion);
+
+                scene.add(spaceship);
+                console.log("Spaceship created and added to scene/world.");
+
+            } catch (error) {
+                console.error("Error in createSpaceship:", error);
+                throw error;
+            }
+        }
+
+        // --- Thrusters ---
+        function createThrusters() {
+            try {
+                const particleCount = 100;
+                const particles_geo = new THREE.BufferGeometry();
+                const posArray = new Float32Array(particleCount * 3);
+                for (let i = 0; i < particleCount * 3; i++) {
+                    posArray[i] = (Math.random() - 0.5) * 0.5;
+                }
+                particles_geo.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+
+                const particleMaterial = new THREE.PointsMaterial({
+                    size: 0.2,
+                    color: 0xffa500,
+                    transparent: true,
+                    blending: THREE.AdditiveBlending,
+                    depthWrite: false,
+                    sizeAttenuation: true,
+                });
+
+                // Main thruster (at the base of the cone, local -Y direction)
+                particles_thrust_main = new THREE.Points(particles_geo.clone(), particleMaterial.clone());
+                particles_thrust_main.position.y = -4; // Positioned at the back (base) of the cone along its local Y
+                particles_thrust_main.rotation.x = -Math.PI / 2; // Orient particles to shoot 'down' relative to cone base (which is along ship's -Z world after initial rotation)
+                particles_thrust_main.visible = false;
+                spaceship.add(particles_thrust_main);
+
+                // Maneuvering thrusters (Keep references, but might not be used for yaw now)
+                 const maneuverMaterial = particleMaterial.clone();
+                 maneuverMaterial.color.set(0x87cefa);
+                 maneuverMaterial.size = 0.1;
+
+                 particles_thrust_left = new THREE.Points(particles_geo.clone(), maneuverMaterial.clone());
+                 particles_thrust_left.position.set(-1.5, -1, 0); // Adjust position relative to ship model
+                 particles_thrust_left.rotation.z = Math.PI / 2; // Point particles outwards along +X
+                 particles_thrust_left.visible = false;
+                 spaceship.add(particles_thrust_left);
+
+                 particles_thrust_right = new THREE.Points(particles_geo.clone(), maneuverMaterial.clone());
+                 particles_thrust_right.position.set(1.5, -1, 0); // Adjust position relative to ship model
+                 particles_thrust_right.rotation.z = -Math.PI / 2; // Point particles outwards along -X
+                 particles_thrust_right.visible = false;
+                 spaceship.add(particles_thrust_right);
+                console.log("Thrusters created.");
+            } catch (error) {
+                console.error("Error in createThrusters:", error);
+                throw error;
+            }
+        }
+
+        function updateThrusters(delta) {
+             if (!particles_thrust_main) return; // Guard clause
+
+            function updateParticleSystem(particles, isActive, intensity = 1) {
+                if (!particles) return;
+                particles.visible = isActive;
+                if (!isActive) return;
+
+                const positions = particles.geometry.attributes.position.array;
+                const baseSpeed = 20 * intensity;
+                const spread = 2 * intensity;
+
+                for (let i = 0; i < positions.length; i += 3) {
+                    // Move particles backward (relative to thruster orientation -> local Z)
+                    positions[i + 2] += baseSpeed * delta * (Math.random() + 0.5);
+
+                    // Add some spread (local X/Y)
+                    positions[i] += (Math.random() - 0.5) * spread * delta;
+                    positions[i + 1] += (Math.random() - 0.5) * spread * delta;
+
+                    // Reset particles
+                    if (positions[i + 2] > 5 * intensity) {
+                        positions[i] = (Math.random() - 0.5) * 0.2;
+                        positions[i + 1] = (Math.random() - 0.5) * 0.2;
+                        positions[i + 2] = (Math.random() - 0.5) * 0.2;
+                    }
+                }
+                particles.geometry.attributes.position.needsUpdate = true;
+            }
+
+            try {
+                const mainThrustIntensity = controls['W'] ? 1.5 : (controls['S'] ? 0.8 : 0);
+                updateParticleSystem(particles_thrust_main, mainThrustIntensity > 0, mainThrustIntensity);
+
+                 // *** REMOVED YAW THRUSTER ACTIVATION ***
+                 // const yawLeftActive = controls['A'] || controls['ARROWLEFT']; // No longer use A/ArrowLeft for yaw thrusters
+                 // const yawRightActive = controls['D'] || controls['ARROWRIGHT']; // No longer use D/ArrowRight for yaw thrusters
+                 // updateParticleSystem(particles_thrust_right, yawLeftActive, 0.5); // Don't activate right thruster for yaw left
+                 // updateParticleSystem(particles_thrust_left, yawRightActive, 0.5); // Don't activate left thruster for yaw right
+
+                 // TODO: Add thruster activation for strafe (A/D) if desired
+                 // TODO: Add thruster activation for actual yaw (ArrowLeft/ArrowRight) if desired
+
+            } catch (error) {
+                console.error("Error updating thrusters:", error);
+            }
+        }
+
+
+        // --- Goal ---
+        function createGoal() {
+            try {
+                if (!goalPosition) {
+                    console.warn("Goal position not set before createGoal() called.");
+                    goalPosition = new THREE.Vector3( (mazeSize - 1.5) * cellSize, 0, 0); // Default if needed
+                }
+                const goalGeometry = new THREE.SphereGeometry(cellSize / 3, 16, 16);
+                const goalMaterial = new THREE.MeshBasicMaterial({
+                    color: 0x00ff00, // Bright green
+                    wireframe: true,
+                    transparent: true,
+                    opacity: 0.8
+                });
+                goalObject = new THREE.Mesh(goalGeometry, goalMaterial);
+                goalObject.position.copy(goalPosition);
+                scene.add(goalObject);
+                console.log("Goal object created at:", goalPosition);
+            } catch (error) {
+                console.error("Error in createGoal:", error);
+                throw error;
+            }
+        }
+
+        function checkGoal() {
+            if (!spaceship || !goalPosition || !goalObject || !spaceshipBody) return; // Added spaceshipBody check
+            try {
+                // Use physics body position for goal check
+                const distanceToGoal = spaceshipBody.position.distanceTo(goalPosition);
+                if (distanceToGoal < cellSize / 2) { // Check if ship center is close enough
+                    if (!document.getElementById('messageBox').hasAttribute('data-won')) { // Only trigger once
+                        showWinMessage();
+                        // Stop the ship
+                        if (spaceshipBody) {
+                            spaceshipBody.velocity.set(0, 0, 0);
+                            spaceshipBody.angularVelocity.set(0, 0, 0);
+                        }
+                        // Make goal less prominent after reaching
+                        goalObject.material.color.set(0xffff00); // Change color to yellow
+                        goalObject.material.wireframe = false;
+                        goalObject.scale.set(0.5, 0.5, 0.5); // Shrink it
+                        document.getElementById('messageBox').setAttribute('data-won', 'true'); // Mark as won
+                    }
+                }
+            } catch (error) {
+                console.error("Error checking goal:", error);
+            }
+        }
+
+        function showWinMessage() {
+            const messageBox = document.getElementById('messageBox');
+            if(messageBox) {
+                messageBox.style.display = 'block';
+            }
+        }
+
+
+        // --- Controls ---
+        function setupControls() {
+            controls = {}; // Reset controls state
+            window.addEventListener('keydown', (event) => {
+                const key = event.key.toUpperCase();
+                 // Use event.code for layout-independent keys if needed, but key is often simpler
+                 controls[key] = true;
+                 // Explicitly map arrow keys and space if needed (though uppercase should work)
+                 const map = {'ARROWUP': 'ARROWUP', 'ARROWDOWN': 'ARROWDOWN', 'ARROWLEFT': 'ARROWLEFT', 'ARROWRIGHT': 'ARROWRIGHT', ' ': 'SPACE'};
+                 if (map[key]) controls[map[key]] = true;
+
+
+                 // Toggle Camera
+                 if (key === 'C') {
+                     cameraMode = (cameraMode === 'follow') ? 'firstPerson' : 'follow';
+                     console.log("Camera mode toggled to:", cameraMode);
+                     updateCameraPosition(); // Immediately update camera
+                 }
+            });
+            window.addEventListener('keyup', (event) => {
+                 const key = event.key.toUpperCase();
+                 controls[key] = false;
+                 const map = {'ARROWUP': 'ARROWUP', 'ARROWDOWN': 'ARROWDOWN', 'ARROWLEFT': 'ARROWLEFT', 'ARROWRIGHT': 'ARROWRIGHT', ' ': 'SPACE'};
+                 if (map[key]) controls[map[key]] = false;
+            });
+             console.log("Control listeners added.");
+        }
+
+        function applyControls(delta) {
+            if (!spaceshipBody || !spaceship) {
+                 return;
+            }
+
+            try {
+                const thrustForce = 50;
+                const reverseThrustForce = 25;
+                const maneuverForce = 30; // For up/down
+                const strafeForce = 30;   // *** ADDED force for strafing ***
+                const rotationTorqueScale = 10; // Keep increased torque magnitude
+                const brakeDamping = 0.95;
+
+                // --- Forces (Translation) ---
+                 const worldQuaternion = spaceshipBody.quaternion;
+                 const forwardVector = new CANNON.Vec3(0, 0, 1); // Local Z+
+                 worldQuaternion.vmult(forwardVector, forwardVector);
+                 const upVector = new CANNON.Vec3(0, 1, 0);       // Local Y+
+                 worldQuaternion.vmult(upVector, upVector);
+                 const rightVector = new CANNON.Vec3(1, 0, 0);    // *** Local X+ ***
+                 worldQuaternion.vmult(rightVector, rightVector); // *** Convert to world ***
+
+
+                const force = new CANNON.Vec3(0, 0, 0);
+                // Forward/Backward
+                if (controls['W']) { force.vadd(forwardVector.scale(thrustForce), force); }
+                if (controls['S']) { force.vadd(forwardVector.scale(-reverseThrustForce), force); }
+                // Ascend/Descend
+                if (controls['R']) { force.vadd(upVector.scale(maneuverForce), force); }
+                if (controls['F']) { force.vadd(upVector.scale(-maneuverForce), force); }
+                // *** Strafe Left/Right ***
+                if (controls['A']) { force.vadd(rightVector.scale(-strafeForce), force); } // Apply force along negative right vector
+                if (controls['D']) { force.vadd(rightVector.scale(strafeForce), force); }  // Apply force along positive right vector
+
+                 // Apply accumulated force
+                 spaceshipBody.applyForce(force, spaceshipBody.position);
+
+
+                // --- Torques (Rotation) ---
+                // Calculate the desired torque *for this frame* in local space
+                const localTorqueThisFrame = new CANNON.Vec3(0, 0, 0);
+
+                // *** Yaw now only on Arrow Keys ***
+                // if (controls['A'] || controls['ARROWLEFT']) { localTorqueThisFrame.y += rotationTorqueScale; } // REMOVED 'A'
+                // if (controls['D'] || controls['ARROWRIGHT']) { localTorqueThisFrame.y -= rotationTorqueScale; } // REMOVED 'D'
+                if (controls['ARROWLEFT']) { localTorqueThisFrame.y += rotationTorqueScale; } // Yaw Left
+                if (controls['ARROWRIGHT']) { localTorqueThisFrame.y -= rotationTorqueScale; } // Yaw Right
+
+                // Pitch
+                if (controls['ARROWUP']) { localTorqueThisFrame.x += rotationTorqueScale; }
+                if (controls['ARROWDOWN']) { localTorqueThisFrame.x -= rotationTorqueScale; }
+                // Roll
+                if (controls['Q']) { localTorqueThisFrame.z += rotationTorqueScale; }
+                if (controls['E']) { localTorqueThisFrame.z -= rotationTorqueScale; }
+
+                 // Only apply torque calculation if needed
+                 if (localTorqueThisFrame.lengthSquared() > 0) {
+                     // Convert the local torque for this frame into world space
+                     const worldTorqueThisFrame = new CANNON.Vec3();
+                     worldQuaternion.vmult(localTorqueThisFrame, worldTorqueThisFrame);
+
+                     // Add this frame's world torque to the body's accumulated torque property
+                     if (spaceshipBody.torque) {
+                        spaceshipBody.torque.vadd(worldTorqueThisFrame, spaceshipBody.torque);
+                     } else {
+                         console.warn("spaceshipBody.torque property not found! Initializing.");
+                         spaceshipBody.torque = worldTorqueThisFrame;
+                     }
+                 }
+
+
+                 // --- Braking ---
+                 if (controls['SPACE']) {
+                     spaceshipBody.velocity.scale(brakeDamping, spaceshipBody.velocity);
+                     spaceshipBody.angularVelocity.scale(brakeDamping, spaceshipBody.angularVelocity);
+                 }
+            } catch (error) {
+                console.error("Error applying controls:", error);
+            }
+        }
+
+        // --- Camera Control ---
+        function updateCameraPosition() {
+            if (!spaceship || !camera || !spaceshipBody) return; // Added check for spaceshipBody
+
+             try {
+                 // Get spaceship position and orientation from the *physics body* for accuracy
+                 const shipPosition = spaceshipBody.position;
+                 const shipQuaternion = spaceshipBody.quaternion; // Use Cannon quaternion
+
+                 // Convert Cannon quaternion to Three.js quaternion for camera math
+                 const threeQuaternion = new THREE.Quaternion(
+                     shipQuaternion.x,
+                     shipQuaternion.y,
+                     shipQuaternion.z,
+                     shipQuaternion.w
+                 );
+
+                if (cameraMode === 'follow') {
+                    // Calculate desired offset in world space based on ship orientation
+                    const offset = followCameraOffset.clone().applyQuaternion(threeQuaternion);
+                    const desiredPosition = new THREE.Vector3(shipPosition.x, shipPosition.y, shipPosition.z).add(offset);
+
+                    // Smoothly interpolate camera position
+                    camera.position.lerp(desiredPosition, 0.1);
+
+                    // Look at the ship's physics body position
+                    camera.lookAt(shipPosition.x, shipPosition.y, shipPosition.z);
+
+                } else { // firstPerson
+                    // Position camera slightly inside/in front of the cockpit (relative to ship center)
+                    const cockpitOffset = new THREE.Vector3(0, 0.5, 1); // Adjust Y for height, Z forward slightly
+                    const desiredPosition = cockpitOffset.clone().applyQuaternion(threeQuaternion).add(new THREE.Vector3(shipPosition.x, shipPosition.y, shipPosition.z));
+                    camera.position.copy(desiredPosition);
+
+                    // Look slightly ahead of the ship
+                     const lookAtOffset = new THREE.Vector3(0, 0, 15); // Look 15 units along ship's forward axis
+                     const lookAtPoint = lookAtOffset.clone().applyQuaternion(threeQuaternion).add(new THREE.Vector3(shipPosition.x, shipPosition.y, shipPosition.z));
+                     camera.lookAt(lookAtPoint);
+                }
+             } catch (error) {
+                 console.error("Error updating camera position:", error);
+             }
+        }
+
+
+        // --- Window Resize ---
+        function onWindowResize() {
+            try {
+                const container = document.getElementById('container');
+                if (!container) return;
+                const width = container.clientWidth;
+                const height = container.clientHeight;
+
+                 // Ensure height is not zero to avoid NaN aspect ratio
+                 if (height === 0) return;
+
+
+                if (camera) {
+                    camera.aspect = width / height;
+                    camera.updateProjectionMatrix();
+                }
+                if (renderer) {
+                    renderer.setSize(width, height);
+                }
+                 // console.log(`Resized to ${width}x${height}`); // Less console spam
+            } catch (error) {
+                console.error("Error on window resize:", error);
+            }
+        }
+
+        // --- Animation Loop ---
+        function animate() {
+            animationFrameId = requestAnimationFrame(animate); // Request next frame first
+
+            try {
+                const delta = clock.getDelta();
+                const dt = 1 / 60; // Fixed timestep for physics
+
+                // --- Updates ---
+                applyControls(delta); // Calculate and accumulate forces/torques
+
+                if (world) {
+                    // The world.step function applies accumulated forces/torques,
+                    // updates velocities/positions, and clears forces/torques.
+                    world.step(dt);
+                }
+
+                // Update Visuals from Physics (after physics step)
+                if (spaceship && spaceshipBody) {
+                    spaceship.position.copy(spaceshipBody.position);
+                    spaceship.quaternion.copy(spaceshipBody.quaternion);
+                }
+
+                updateThrusters(delta); // Update visuals based on render delta
+                updateCameraPosition(); // Update camera based on latest physics state
+                checkGoal();
+
+                // --- Rendering ---
+                if (renderer && scene && camera) {
+                    renderer.render(scene, camera);
+                } else {
+                    console.error("Renderer, Scene or Camera missing for render call!");
+                    cancelAnimationFrame(animationFrameId);
+                }
+
+            } catch (error) {
+                console.error("Error in animation loop:", error);
+                if (animationFrameId) {
+                    cancelAnimationFrame(animationFrameId);
+                }
+                 const container = document.getElementById('container');
+                 if(container) {
+                     container.innerHTML = `<p style="color: red; padding: 20px; text-align: center;">Runtime Error: ${error.message}<br>Check console (F12) for details.</p>`;
+                 }
+            }
+        }
+
+        // --- Start ---
+        document.addEventListener('DOMContentLoaded', () => {
+             console.log("DOM Loaded. Checking libraries...");
+             if (typeof THREE !== 'undefined' && typeof CANNON !== 'undefined') {
+                 console.log("Three.js and Cannon.js seem loaded. Initializing...");
+                 init();
+             } else {
+                 console.error("ERROR: Three.js or Cannon.js failed to load!");
+                 const container = document.getElementById('container');
+                 if(container) {
+                     container.innerHTML = `<p style="color: red; padding: 20px; text-align: center;">Error: Could not load required libraries (Three.js/Cannon.js).<br>Check network connection and console (F12).</p>`;
+                 }
+             }
+        });
+
+        console.log("Script loaded. Waiting for DOMContentLoaded...");
+
+    </script>
+</body>
+</html>

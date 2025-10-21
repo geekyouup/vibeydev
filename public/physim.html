@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Water Simulation</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden; /* Prevent scrollbars */
+            background-color: #0a192f; /* Dark blue background */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            font-family: sans-serif;
+            color: #ccd6f6;
+        }
+        canvas {
+            display: block;
+            background-color: #112240; /* Slightly lighter canvas background */
+            border-radius: 5px; /* Optional: rounded corners */
+        }
+        #instructions {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            color: #8892b0;
+            font-size: 0.9em;
+            background-color: rgba(10, 25, 47, 0.8);
+            padding: 5px 10px;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+    <div id="instructions">Click and drag to make it rain!</div>
+    <canvas id="waterCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('waterCanvas');
+        const ctx = canvas.getContext('2d');
+
+        let particles = [];
+        let isMouseDown = false;
+        let mouseX = 0;
+        let mouseY = 0;
+        const gravity = 0.15; // Lower gravity for a lighter feel
+        const particleSpawnRate = 3; // Number of particles per frame while dragging
+        const maxParticles = 3000; // Limit total particles for performance
+        const trailAlpha = 0.1; // How much trail effect (lower = more trail)
+
+        // --- Particle Class ---
+        class Particle {
+            constructor(x, y) {
+                this.x = x + (Math.random() - 0.5) * 10; // Spawn slightly spread out
+                this.y = y + (Math.random() - 0.5) * 10;
+                this.vx = (Math.random() - 0.5) * 1.5; // Slight initial horizontal velocity
+                this.vy = Math.random() * 1 + 0.5;    // Slight initial downward velocity
+                this.radius = Math.random() * 2 + 1;  // Random size (1 to 3)
+                this.life = Math.random() * 50 + 150; // Lifespan in frames (longer)
+                this.initialLife = this.life;
+                // Shifting blues: HSL (Hue, Saturation, Lightness)
+                // Hue around 200-240 (blue), Saturation high, Lightness varying
+                this.color = `hsl(${200 + Math.random() * 40}, 90%, ${60 + Math.random() * 20}%)`;
+            }
+
+            update() {
+                this.vy += gravity;
+                this.x += this.vx;
+                this.y += this.vy;
+                this.life--;
+
+                // Simple bounce/stop at bottom - slightly randomized bounce height
+                if (this.y + this.radius > canvas.height) {
+                    this.y = canvas.height - this.radius;
+                    this.vy *= -0.3 * Math.random(); // Dampened bounce
+                    this.vx *= 0.9; // Friction on bounce
+                    // Make particles fade faster after hitting the bottom
+                    if (Math.abs(this.vy) < 0.5) this.life -= 5;
+                }
+
+                // Optional: Bounce off sides (uncomment if desired)
+                // if (this.x + this.radius > canvas.width || this.x - this.radius < 0) {
+                //     this.vx *= -0.8;
+                //     this.x = Math.max(this.radius, Math.min(canvas.width - this.radius, this.x));
+                // }
+            }
+
+            draw() {
+                // Calculate alpha based on remaining life
+                const alpha = Math.max(0, (this.life / this.initialLife) * 0.9); // Fade out
+
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2, false);
+                // Set color with calculated alpha
+                // Need to convert HSL string to RGBA for alpha modification easily,
+                // or create RGBA directly. Let's use RGBA directly for simplicity here.
+                // Simplified color - using a base blue with alpha
+                const baseBlue = [100, 150, 255]; // Approx RGB for a nice blue
+                ctx.fillStyle = `rgba(${baseBlue[0]}, ${baseBlue[1]}, ${baseBlue[2]}, ${alpha})`;
+                // Or use the HSL color (more complex to add alpha reliably cross-browser without library)
+                // ctx.fillStyle = this.color; // If you don't need alpha fading as much
+
+                ctx.fill();
+            }
+        }
+
+        // --- Simulation Loop ---
+        function animate() {
+            // 1. Clear canvas with trail effect
+            ctx.fillStyle = `rgba(17, 34, 64, ${trailAlpha})`; // Use canvas background color with alpha
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // 2. Spawn new particles if mouse is down
+            if (isMouseDown) {
+                for (let i = 0; i < particleSpawnRate; i++) {
+                    if (particles.length < maxParticles) {
+                        particles.push(new Particle(mouseX, mouseY));
+                    } else {
+                        break; // Stop spawning if max reached
+                    }
+                }
+            }
+
+            // 3. Update and draw particles (loop backwards for safe removal)
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.update();
+                p.draw();
+
+                // Remove dead particles
+                if (p.life <= 0 || p.y > canvas.height + 50) { // Remove if life ends or way off screen
+                    particles.splice(i, 1);
+                }
+            }
+
+            // 4. Request next frame
+            requestAnimationFrame(animate);
+        }
+
+        // --- Event Listeners ---
+        function handleResize() {
+            canvas.width = window.innerWidth * 0.9; // Use 90% of window width
+            canvas.height = window.innerHeight * 0.8; // Use 80% of window height
+             // Re-center instructions or other elements if needed
+        }
+
+        canvas.addEventListener('mousedown', (e) => {
+            isMouseDown = true;
+            mouseX = e.clientX - canvas.getBoundingClientRect().left;
+            mouseY = e.clientY - canvas.getBoundingClientRect().top;
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            if (isMouseDown) {
+                mouseX = e.clientX - canvas.getBoundingClientRect().left;
+                mouseY = e.clientY - canvas.getBoundingClientRect().top;
+            }
+        });
+
+        canvas.addEventListener('mouseup', () => {
+            isMouseDown = false;
+        });
+
+        canvas.addEventListener('mouseleave', () => { // Stop spawning if mouse leaves canvas
+            isMouseDown = false;
+        });
+
+         // Touch events for mobile
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault(); // Prevent scrolling
+            isMouseDown = true;
+            const touch = e.touches[0];
+            mouseX = touch.clientX - canvas.getBoundingClientRect().left;
+            mouseY = touch.clientY - canvas.getBoundingClientRect().top;
+        }, { passive: false }); // Need passive: false to call preventDefault
+
+        canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault(); // Prevent scrolling
+            if (isMouseDown) {
+                 const touch = e.touches[0];
+                 mouseX = touch.clientX - canvas.getBoundingClientRect().left;
+                 mouseY = touch.clientY - canvas.getBoundingClientRect().top;
+            }
+        }, { passive: false });
+
+        canvas.addEventListener('touchend', () => {
+            isMouseDown = false;
+        });
+        canvas.addEventListener('touchcancel', () => {
+            isMouseDown = false;
+        });
+
+
+        window.addEventListener('resize', handleResize);
+
+        // --- Initialization ---
+        handleResize(); // Set initial size
+        animate();      // Start the simulation loop
+
+    </script>
+</body>
+</html>

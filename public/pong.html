@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ping Pong Game</title>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background-color: #222;
+            font-family: 'Press Start 2P', cursive;
+            overflow: hidden; /* Prevent scrollbars */
+            margin: 0; /* Remove default body margin */
+        }
+        #gameCanvas {
+            background-color: #228B22; /* Forest Green */
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+            cursor: pointer; /* Add pointer cursor to indicate interactivity */
+        }
+        #scoreDisplay {
+            margin-top: 20px;
+            font-size: 24px;
+            color: #fff;
+            display: flex;
+            gap: 20px;
+        }
+        /* Style buttons container */
+        #buttonContainer {
+            display: flex;
+            gap: 15px; /* Add space between buttons */
+            margin-top: 20px;
+        }
+        #startButton, #muteButton, #newGameButton { /* Apply styles to New Game button too */
+            padding: 10px 20px;
+            font-size: 16px;
+            color: #fff;
+            background-color: #007bff;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-family: 'Press Start 2P', cursive;
+            transition: background-color 0.3s ease;
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.3); /* Add subtle shadow */
+        }
+        #startButton:hover, #muteButton:hover, #newGameButton:hover {
+            background-color: #0056b3;
+        }
+        #message {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 28px;
+            color: #fff;
+            background-color: rgba(0, 0, 0, 0.7); /* Slightly darker background */
+            padding: 25px; /* More padding */
+            border-radius: 10px;
+            display: none;
+            z-index: 10;
+            text-align: center; /* Center text */
+        }
+        #muteButton {
+            background-color: #6c757d; /* Different color for mute */
+            display: flex; /* Align icon inside */
+            align-items: center;
+            justify-content: center;
+            padding: 8px; /* Adjust padding for icon */
+        }
+        #muteButton:hover {
+            background-color: #5a6268;
+        }
+        #muteButton.muted {
+            background-color: #495057; /* Darker when muted */
+        }
+        #muteIcon {
+            width: 20px; /* Adjust icon size */
+            height: 20px;
+            filter: invert(1); /* Make SVG icon white */
+        }
+        .game-over-overlay {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: rgba(0, 0, 0, 0.85); /* Darker overlay */
+            z-index: 10;
+        }
+
+        .game-over-content {
+            text-align: center;
+            padding: 30px 40px; /* More padding */
+            border-radius: 10px;
+            border: 4px solid #fff;
+            background-color: #111;
+            box-shadow: 0 0 20px rgba(255, 255, 255, 0.3); /* Adjusted shadow color */
+        }
+
+        .game-over-title {
+            font-size: 42px; /* Larger title */
+            /* Color set dynamically in JS */
+            margin-bottom: 25px;
+            text-shadow: 2px 2px 5px rgba(0,0,0,0.5); /* Add shadow to title */
+        }
+
+        .game-over-winner {
+            font-size: 24px; /* Slightly smaller winner text */
+            color: #fff;
+            margin-bottom: 35px;
+        }
+        #newGameButton {
+            background-color: #28a745; /* Green color for play again */
+        }
+        #newGameButton:hover {
+            background-color: #218838;
+        }
+
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <div id="scoreDisplay">
+        <span id="playerScore">Player: 0</span>
+        <span id="aiScore">AI: 0</span>
+    </div>
+    <div id="buttonContainer">
+        <button id="startButton">Start</button>
+        <button id="muteButton" title="Mute/Unmute Sound"> <img id="muteIcon" src="https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/volume-2.svg" alt="Sound Icon"/>
+        </button>
+    </div>
+    <div id="message"></div>
+    <div class="game-over-overlay" style="display: none;">
+        <div class="game-over-content">
+            <h2 class="game-over-title">GAME OVER</h2> <p class="game-over-winner">Winner: <span id="winnerName"></span></p>
+            <button id="newGameButton">New Game</button> </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/tone@14.7.77/build/Tone.min.js"></script>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const playerScoreDisplay = document.getElementById('playerScore');
+        const aiScoreDisplay = document.getElementById('aiScore');
+        const startButton = document.getElementById('startButton');
+        const messageElement = document.getElementById('message');
+        const muteButton = document.getElementById('muteButton');
+        const muteIcon = document.getElementById('muteIcon');
+
+        // Game Over Screen elements
+        const gameOverOverlay = document.querySelector('.game-over-overlay');
+        const gameOverTitle = document.querySelector('.game-over-title'); // Select the title element
+        const winnerNameDisplay = document.getElementById('winnerName');
+        const newGameButton = document.getElementById('newGameButton');
+
+        // Game constants and variables
+        const PADDLE_WIDTH = 10;
+        const PADDLE_HEIGHT = 100;
+        const BALL_RADIUS = 10;
+        const WINNING_SCORE = 11;
+        const PLAYER_SPEED = 6;
+        // --- AI Difficulty Adjustment ---
+        const AI_SPEED = 2.0; // AI speed increased slightly
+        // -----------------------------
+        const INITIAL_BALL_SPEED = 3;
+        const BALL_SPEED_INCREASE_FACTOR = 1.02;
+        const MAX_BALL_SPEED = 6;
+
+        let playerX = 30;
+        let playerY = (canvas.height - PADDLE_HEIGHT) / 2;
+        let playerVelocityY = 0;
+        let aiX = canvas.width - 30 - PADDLE_WIDTH;
+        let aiY = (canvas.height - PADDLE_HEIGHT) / 2;
+        let ballX = canvas.width / 2;
+        let ballY = canvas.height / 2;
+        let ballSpeedX = INITIAL_BALL_SPEED;
+        let ballSpeedY = INITIAL_BALL_SPEED;
+        let playerScore = 0;
+        let aiScore = 0;
+        let gamePlaying = false;
+        let muted = false;
+        let touchStartY = null;
+        let animationFrameId = null;
+
+        // --- Sound Effects (Tone.js) ---
+        let pongSound, wallSound, scoreSound;
+        let soundsInitialized = false;
+
+        async function initializeSounds() {
+            if (soundsInitialized) return;
+            try {
+                await Tone.start();
+                pongSound = new Tone.Synth({ oscillator: { type: 'sine' }, envelope: { attack: 0.01, decay: 0.1, sustain: 0, release: 0.1 } }).toDestination();
+                wallSound = new Tone.Synth({ oscillator: { type: 'square' }, envelope: { attack: 0.01, decay: 0.05, sustain: 0, release: 0.1 } }).toDestination();
+                scoreSound = new Tone.Synth({ oscillator: { type: 'triangle' }, envelope: { attack: 0.01, decay: 0.2, sustain: 0, release: 0.2 } }).toDestination();
+                soundsInitialized = true;
+                console.log("Audio Context Started and Sounds Initialized");
+            } catch (error) {
+                console.error("Failed to initialize sounds:", error);
+                muted = true;
+                muteIcon.src = "https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/volume-x.svg";
+                muteButton.classList.add('muted');
+                muteButton.title = "Sound Disabled (Error)";
+                muteButton.disabled = true;
+            }
+        }
+
+        function playPongSound() { if (!muted && soundsInitialized && pongSound) { pongSound.triggerAttackRelease('C4', '8n', Tone.now()); } }
+        function playWallSound() { if (!muted && soundsInitialized && wallSound) { wallSound.triggerAttackRelease('G3', '16n', Tone.now()); } }
+        function playScoreSound() { if (!muted && soundsInitialized && scoreSound) { scoreSound.triggerAttackRelease('E5', '4n', Tone.now()); } }
+
+        // --- Drawing Functions ---
+        function drawPaddle(x, y, width, height, color) {
+            ctx.fillStyle = color;
+            ctx.shadowColor = color;
+            ctx.shadowBlur = 10;
+            ctx.fillRect(x, y, width, height);
+            ctx.shadowBlur = 0;
+        }
+        function drawBall(x, y, radius, color) {
+            ctx.fillStyle = color;
+            ctx.shadowColor = color;
+            ctx.shadowBlur = 15;
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.closePath();
+            ctx.shadowBlur = 0;
+        }
+        function drawScore() {
+            playerScoreDisplay.textContent = `Player: ${playerScore}`;
+            aiScoreDisplay.textContent = `AI: ${aiScore}`;
+        }
+
+        // --- Game Logic Functions ---
+         function resetBall(direction = 1) {
+            ballX = canvas.width / 2;
+            ballY = canvas.height / 2;
+            ballSpeedX = INITIAL_BALL_SPEED * direction;
+            ballSpeedY = (Math.random() > 0.5 ? 1 : -1) * INITIAL_BALL_SPEED * (0.5 + Math.random() * 0.5);
+        }
+        function showMessage(message) {
+            messageElement.textContent = message;
+            messageElement.style.display = 'block';
+        }
+        function hideMessage() {
+            messageElement.style.display = 'none';
+        }
+        function updatePlayer() {
+            playerY += playerVelocityY;
+            playerY = Math.max(0, Math.min(playerY, canvas.height - PADDLE_HEIGHT));
+        }
+
+        function updateAI() {
+            const aiPaddleCenterY = aiY + PADDLE_HEIGHT / 2;
+            // --- AI Difficulty Adjustment ---
+            const reactionThreshold = PADDLE_HEIGHT * 0.25; // AI reaction threshold reduced slightly
+            // -----------------------------
+
+            if (ballY < aiPaddleCenterY - reactionThreshold) {
+                 aiY -= AI_SPEED; // Move up
+            } else if (ballY > aiPaddleCenterY + reactionThreshold) {
+                 aiY += AI_SPEED; // Move down
+            }
+
+            aiY = Math.max(0, Math.min(aiY, canvas.height - PADDLE_HEIGHT));
+        }
+
+        function checkCollision() {
+             // Top/Bottom Wall collision
+            if (ballY + BALL_RADIUS > canvas.height || ballY - BALL_RADIUS < 0) {
+                ballSpeedY = -ballSpeedY;
+                playWallSound();
+                ballSpeedX *= (1 + (Math.random() - 0.5) * 0.1);
+            }
+            // Player Paddle collision
+            if (ballX - BALL_RADIUS < playerX + PADDLE_WIDTH && ballX - BALL_RADIUS > playerX && ballY + BALL_RADIUS > playerY && ballY - BALL_RADIUS < playerY + PADDLE_HEIGHT) {
+                ballSpeedX = -ballSpeedX * BALL_SPEED_INCREASE_FACTOR;
+                let deltaY = ballY - (playerY + PADDLE_HEIGHT / 2);
+                ballSpeedY = deltaY * 0.35;
+                playPongSound();
+                ballX = playerX + PADDLE_WIDTH + BALL_RADIUS;
+            }
+            // AI Paddle collision
+            else if (ballX + BALL_RADIUS > aiX && ballX + BALL_RADIUS < aiX + PADDLE_WIDTH && ballY + BALL_RADIUS > aiY && ballY - BALL_RADIUS < aiY + PADDLE_HEIGHT) {
+                ballSpeedX = -ballSpeedX * BALL_SPEED_INCREASE_FACTOR;
+                let deltaY = ballY - (aiY + PADDLE_HEIGHT / 2);
+                ballSpeedY = deltaY * 0.35;
+                playPongSound();
+                ballX = aiX - BALL_RADIUS;
+            }
+        }
+
+        function updateBall() {
+            ballX += ballSpeedX;
+            ballY += ballSpeedY;
+            ballSpeedX = Math.max(-MAX_BALL_SPEED, Math.min(MAX_BALL_SPEED, ballSpeedX));
+            ballSpeedY = Math.max(-MAX_BALL_SPEED, Math.min(MAX_BALL_SPEED, ballSpeedY));
+        }
+
+        function checkScore() {
+            // AI scores
+            if (ballX - BALL_RADIUS < 0) {
+                aiScore++;
+                playScoreSound();
+                if (aiScore >= WINNING_SCORE) { endGame("AI"); } else { resetBall(1); }
+            }
+            // Player scores
+            else if (ballX + BALL_RADIUS > canvas.width) {
+                playerScore++;
+                 playScoreSound();
+                if (playerScore >= WINNING_SCORE) { endGame("Player"); } else { resetBall(-1); }
+            }
+        }
+
+        function drawGame() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height); // Clear canvas first
+
+            // Center line
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)'; // White dashed line
+            ctx.lineWidth = 2;
+            ctx.setLineDash([10, 10]);
+            ctx.beginPath();
+            ctx.moveTo(canvas.width / 2, 0);
+            ctx.lineTo(canvas.width / 2, canvas.height);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Draw elements
+            drawPaddle(playerX, playerY, PADDLE_WIDTH, PADDLE_HEIGHT, '#00aaff'); // Blue player
+            drawPaddle(aiX, aiY, PADDLE_WIDTH, PADDLE_HEIGHT, '#ff4444'); // Red AI
+            drawBall(ballX, ballY, BALL_RADIUS, '#ffffff'); // White ball
+            drawScore();
+        }
+
+        function gameLoop() {
+            if (!gamePlaying) return;
+            updatePlayer();
+            updateAI();
+            updateBall();
+            checkCollision();
+            checkScore();
+            drawGame();
+            animationFrameId = requestAnimationFrame(gameLoop);
+        }
+
+        function startGame() {
+             if (!soundsInitialized) { initializeSounds(); }
+             if (!gamePlaying) {
+                playerScore = 0;
+                aiScore = 0;
+                playerY = (canvas.height - PADDLE_HEIGHT) / 2;
+                aiY = (canvas.height - PADDLE_HEIGHT) / 2;
+                playerVelocityY = 0;
+                resetBall(Math.random() > 0.5 ? 1 : -1);
+                gamePlaying = true;
+                hideMessage();
+                hideGameOverScreen(); // Hide screen on start
+                startButton.textContent = 'Restart';
+                drawScore();
+                if (animationFrameId) { cancelAnimationFrame(animationFrameId); }
+                gameLoop();
+             } else {
+                 endGame();
+                 startGame();
+             }
+        }
+
+         function endGame(winner = null) {
+            gamePlaying = false;
+            if (animationFrameId) { cancelAnimationFrame(animationFrameId); animationFrameId = null; }
+             if (winner) {
+                 showGameOverScreen(winner); // Show screen with winner
+             }
+            startButton.textContent = 'Start';
+            ballSpeedX = INITIAL_BALL_SPEED;
+            ballSpeedY = INITIAL_BALL_SPEED;
+            playerVelocityY = 0;
+        }
+
+        function showGameOverScreen(winner) {
+            // --- Game Over Text Change ---
+            if (winner === "Player") {
+                gameOverTitle.textContent = "YOU WIN!";
+                gameOverTitle.style.color = '#28a745'; // Green color for win
+                gameOverOverlay.style.boxShadow = '0 0 20px rgba(40, 167, 69, 0.7)'; // Green glow
+            } else { // AI wins or other condition
+                gameOverTitle.textContent = "GAME OVER";
+                gameOverTitle.style.color = '#f00'; // Red color for loss/game over
+                gameOverOverlay.style.boxShadow = '0 0 20px rgba(255, 0, 0, 0.5)'; // Red glow
+            }
+            // -----------------------------
+            winnerNameDisplay.textContent = winner; // Still show who won
+            gameOverOverlay.style.display = 'flex'; // Show the overlay
+        }
+
+        function hideGameOverScreen() {
+            gameOverOverlay.style.display = 'none'; // Hide the overlay
+        }
+
+        // --- Event Listeners ---
+        const KEY_UP_CODES = ['ArrowUp', 'w', 'W'];
+        const KEY_DOWN_CODES = ['ArrowDown', 's', 'S'];
+        document.addEventListener('keydown', (e) => {
+            if (!gamePlaying) return;
+            if (KEY_UP_CODES.includes(e.key)) { playerVelocityY = -PLAYER_SPEED; }
+            else if (KEY_DOWN_CODES.includes(e.key)) { playerVelocityY = PLAYER_SPEED; }
+        });
+        document.addEventListener('keyup', (e) => {
+            if (!gamePlaying) return;
+            if (KEY_UP_CODES.includes(e.key) && playerVelocityY < 0) { playerVelocityY = 0; }
+            else if (KEY_DOWN_CODES.includes(e.key) && playerVelocityY > 0) { playerVelocityY = 0; }
+        });
+        canvas.addEventListener('mousemove', (e) => {
+            if (!gamePlaying) return;
+            playerVelocityY = 0;
+            const rect = canvas.getBoundingClientRect();
+            const mouseY = e.clientY - rect.top;
+            playerY = mouseY - PADDLE_HEIGHT / 2;
+            playerY = Math.max(0, Math.min(playerY, canvas.height - PADDLE_HEIGHT));
+        });
+        canvas.addEventListener('touchstart', (e) => {
+            if (!gamePlaying) { startGame(); }
+             if (gamePlaying && e.touches.length > 0) {
+                playerVelocityY = 0;
+                const rect = canvas.getBoundingClientRect();
+                touchStartY = e.touches[0].clientY - rect.top;
+                playerY = touchStartY - PADDLE_HEIGHT / 2;
+                playerY = Math.max(0, Math.min(playerY, canvas.height - PADDLE_HEIGHT));
+            }
+            e.preventDefault();
+        }, { passive: false });
+        canvas.addEventListener('touchmove', (e) => {
+            if (!gamePlaying || !touchStartY || e.touches.length === 0) return;
+            playerVelocityY = 0;
+            const rect = canvas.getBoundingClientRect();
+            const touchY = e.touches[0].clientY - rect.top;
+            playerY = touchY - PADDLE_HEIGHT / 2;
+            playerY = Math.max(0, Math.min(playerY, canvas.height - PADDLE_HEIGHT));
+            e.preventDefault();
+        }, { passive: false });
+        canvas.addEventListener('touchend', () => { touchStartY = null; });
+        startButton.addEventListener('click', startGame);
+        newGameButton.addEventListener('click', startGame);
+        canvas.addEventListener('click', () => { if (!gamePlaying) { startGame(); } });
+        muteButton.addEventListener('click', () => {
+            if (!soundsInitialized) { initializeSounds(); }
+            if (soundsInitialized && !muteButton.disabled) {
+                 muted = !muted;
+                 muteIcon.src = muted ? "https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/volume-x.svg" : "https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/volume-2.svg";
+                 muteButton.classList.toggle('muted', muted);
+                 muteButton.title = muted ? "Unmute Sound" : "Mute Sound";
+            }
+        });
+
+        // --- Initial Setup ---
+        drawGame();
+        showMessage("Click Start or Tap Screen to Play");
+
+    </script>
+</body>
+</html>

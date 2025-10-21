@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pretty Lunar Lander</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #000010; /* Very dark blue space */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            font-family: 'Consolas', 'Courier New', monospace;
+            color: #e0e0e0;
+        }
+        canvas {
+            display: block;
+            background-color: transparent; /* See through to body background */
+            border: 1px solid #444; /* Subtle border */
+        }
+        #instructions {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            font-size: 0.9em;
+            background-color: rgba(0, 0, 20, 0.7);
+            padding: 8px;
+            border-radius: 4px;
+            max-width: 250px;
+            line-height: 1.4;
+        }
+         #status {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            font-size: 1em;
+            background-color: rgba(0, 0, 20, 0.7);
+            padding: 8px;
+            border-radius: 4px;
+            text-align: right;
+        }
+        .value { color: #87CEEB; /* Sky blue for values */ } /* Light cyan */
+        .danger { color: #FF6347; } /* Tomato red */
+        .safe { color: #90EE90; } /* Light green */
+        .fuel-bar {
+            height: 10px;
+            width: 100px;
+            background-color: #555;
+            border: 1px solid #888;
+            margin-top: 4px;
+            position: relative; /* Needed for the inner bar */
+            display: inline-block; /* Align with text */
+            vertical-align: middle;
+        }
+        .fuel-level {
+            height: 100%;
+            background-color: #FFD700; /* Gold */
+            width: 100%; /* Start full */
+            transition: width 0.1s linear; /* Smooth fuel decrease */
+        }
+        .game-over {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 3em;
+            font-weight: bold;
+            padding: 20px 40px;
+            background-color: rgba(0, 0, 20, 0.85);
+            border-radius: 10px;
+            text-align: center;
+            display: none; /* Hidden initially */
+        }
+        .game-over span {
+            display: block;
+            font-size: 0.5em;
+            font-weight: normal;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div id="instructions">
+        <b>Controls:</b><br>
+        [↑] / [W] - Main Thrust<br>
+        [←] / [A] - Rotate Left<br>
+        [→] / [D] - Rotate Right<br>
+        Land gently (<span class="safe">Speed &lt; 2</span>, <span class="safe">Angle &lt; 0.1</span>) on the <span style="color: #90EE90;">green pads</span>.<br>
+        Avoid crashing!
+    </div>
+
+    <div id="status">
+        Altitude: <span id="alt" class="value">0.0</span> m<br>
+        Horiz Vel: <span id="hvel" class="value">0.0</span> m/s<br>
+        Vert Vel: <span id="vvel" class="value">0.0</span> m/s<br>
+        Angle: <span id="angle" class="value">0.0</span> rad<br>
+        Fuel: <div class="fuel-bar"><div id="fuel-level" class="fuel-level"></div></div> <span id="fuel-val" class="value">1000</span>
+    </div>
+
+    <div id="game-over">
+        <span id="game-over-message"></span>
+        <span>Press [R] to Restart</span>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // --- DOM Elements ---
+        const altEl = document.getElementById('alt');
+        const hVelEl = document.getElementById('hvel');
+        const vVelEl = document.getElementById('vvel');
+        const angleEl = document.getElementById('angle');
+        const fuelValEl = document.getElementById('fuel-val');
+        const fuelLevelEl = document.getElementById('fuel-level');
+        const gameOverEl = document.getElementById('game-over');
+        const gameOverMsgEl = document.getElementById('game-over-message');
+
+        // --- Game Constants ---
+        const GRAVITY = 0.0035; // Lunar gravity (adjust for feel)
+        const MAIN_THRUST = 0.012; // Main engine power
+        const ROTATION_THRUST = 0.00018; // Rotational thruster power
+        const ROTATION_SPEED = 0.04; // Angle change per frame
+        const FUEL_CONSUMPTION_MAIN = 1.5;
+        const FUEL_CONSUMPTION_ROTATION = 0.2;
+        const SAFE_LANDING_SPEED = 2.0;
+        const SAFE_LANDING_ANGLE = 0.1; // Radians (~5.7 degrees)
+        const TERRAIN_SEGMENTS = 100;
+        const TERRAIN_ROUGHNESS = 0.6; // 0 = flat, 1 = very rough
+        const LANDING_PAD_WIDTH = 60; // Width of flat landing pads
+        const LANDING_PAD_COUNT = 3;
+        const STAR_COUNT = 300;
+
+        // --- Game State ---
+        let lander;
+        let terrain = [];
+        let stars = [];
+        let particles = [];
+        let keys = {}; // Tracks pressed keys
+        let gameState = 'playing'; // 'playing', 'landed', 'crashed'
+        let initialFuel;
+
+        // --- Lander Class ---
+        class Lander {
+            constructor(x, y, fuel) {
+                this.x = x;
+                this.y = y;
+                this.vx = 0.5; // Slight initial drift
+                this.vy = 0;
+                this.angle = 0; // Radians, 0 = pointing up
+                this.fuel = fuel;
+                initialFuel = fuel; // Store for fuel bar percentage
+                this.width = 18;
+                this.height = 20;
+                this.thrusting = false;
+                this.rotatingLeft = false;
+                this.rotatingRight = false;
+                // Define points for drawing the lander relative to (0,0)
+                this.landerShape = [
+                    { x: 0, y: -this.height / 2 }, // Nose cone
+                    { x: -this.width / 2, y: this.height / 4 }, // Left body
+                    { x: -this.width / 2 - 3, y: this.height / 2 }, // Left leg foot
+                    { x: -this.width / 2, y: this.height / 4 }, // Back to Left body
+                    { x: this.width / 2, y: this.height / 4 }, // Right body
+                    { x: this.width / 2 + 3, y: this.height / 2 }, // Right leg foot
+                    { x: this.width / 2, y: this.height / 4 }, // Back to Right body
+                    { x: 0, y: -this.height / 2 } // Back to Nose cone
+                ];
+                // Define flame shape relative to (0,0)
+                 this.flameShape = [
+                    { x: 0, y: this.height / 3 + 2 },
+                    { x: -this.width / 4, y: this.height / 2 + 5 },
+                    { x: this.width / 4, y: this.height / 2 + 5 },
+                 ];
+            }
+
+            applyThrust() {
+                if (this.fuel > 0) {
+                    // Calculate thrust vector based on angle
+                    const thrustX = Math.sin(this.angle) * MAIN_THRUST;
+                    const thrustY = -Math.cos(this.angle) * MAIN_THRUST; // Y is inverted in canvas
+                    this.vx += thrustX;
+                    this.vy += thrustY;
+                    this.fuel -= FUEL_CONSUMPTION_MAIN;
+                    this.thrusting = true;
+                } else {
+                    this.fuel = 0;
+                    this.thrusting = false;
+                }
+            }
+
+            rotate(direction) { // direction: -1 for left, 1 for right
+                if (this.fuel > 0) {
+                    this.angle += direction * ROTATION_SPEED;
+                    this.fuel -= FUEL_CONSUMPTION_ROTATION;
+                    if (direction < 0) this.rotatingLeft = true;
+                    else this.rotatingRight = true;
+                } else {
+                    this.fuel = 0;
+                }
+            }
+
+            update() {
+                // Apply gravity
+                this.vy += GRAVITY;
+
+                // Update position
+                this.x += this.vx;
+                this.y += this.vy;
+
+                // Reset thruster states (will be set again if key is held)
+                this.thrusting = false;
+                this.rotatingLeft = false;
+                this.rotatingRight = false;
+
+                // Keep angle within -PI to PI (optional, but tidy)
+                // this.angle = (this.angle + Math.PI * 3) % (Math.PI * 2) - Math.PI;
+            }
+
+             // Get the coordinates of the lander's feet for collision detection
+            getFeetPositions() {
+                const cosA = Math.cos(this.angle);
+                const sinA = Math.sin(this.angle);
+                const leftFootRel = { x: -this.width / 2 - 3, y: this.height / 2 }; // Relative coords
+                const rightFootRel = { x: this.width / 2 + 3, y: this.height / 2 };
+
+                const leftFoot = {
+                    x: this.x + leftFootRel.x * cosA - leftFootRel.y * sinA,
+                    y: this.y + leftFootRel.x * sinA + leftFootRel.y * cosA
+                };
+                 const rightFoot = {
+                    x: this.x + rightFootRel.x * cosA - rightFootRel.y * sinA,
+                    y: this.y + rightFootRel.x * sinA + rightFootRel.y * cosA
+                };
+                return [leftFoot, rightFoot];
+            }
+
+
+            draw() {
+                ctx.save(); // Save current context state (transformations)
+                ctx.translate(this.x, this.y); // Move origin to lander's position
+                ctx.rotate(this.angle); // Rotate context
+
+                // Draw Lander Body
+                ctx.beginPath();
+                ctx.moveTo(this.landerShape[0].x, this.landerShape[0].y);
+                for (let i = 1; i < this.landerShape.length; i++) {
+                    ctx.lineTo(this.landerShape[i].x, this.landerShape[i].y);
+                }
+                ctx.closePath();
+                ctx.strokeStyle = '#E0E0E0'; // Light gray outline
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+                ctx.fillStyle = '#A9A9A9'; // Dark Gray fill
+                ctx.fill();
+
+
+                // Draw Main Thrust Flame (if thrusting and has fuel)
+                if (this.thrusting && this.fuel > 0) {
+                    ctx.beginPath();
+                    // Flicker effect
+                    const flameLength = 15 + Math.random() * 10;
+                    const flameWidth = this.width / 3 + Math.random() * 2 - 1;
+                    ctx.moveTo(0, this.height / 3 + 2); // Nozzle position
+                    ctx.lineTo(-flameWidth / 2, this.height / 2 + flameLength);
+                    ctx.lineTo(flameWidth / 2, this.height / 2 + flameLength);
+                    ctx.closePath();
+
+                    // Gradient flame
+                    const gradient = ctx.createLinearGradient(0, this.height / 2, 0, this.height / 2 + flameLength);
+                    gradient.addColorStop(0, 'rgba(255, 255, 255, 0.9)'); // White hot near nozzle
+                    gradient.addColorStop(0.5, 'rgba(255, 215, 0, 0.7)'); // Yellow/Gold middle
+                    gradient.addColorStop(1, 'rgba(255, 69, 0, 0.3)');   // Orange/Red tip (transparent)
+                    ctx.fillStyle = gradient;
+                    ctx.fill();
+                }
+
+                 // Draw Rotational Thruster Puffs (subtle)
+                if (this.rotatingLeft && this.fuel > 0) {
+                     drawThrusterPuff(this.width / 2 + 2, this.height / 4 - 4, -Math.PI / 2); // Right side puff for left rotation
+                }
+                if (this.rotatingRight && this.fuel > 0) {
+                    drawThrusterPuff(-this.width / 2 - 2, this.height / 4 - 4, Math.PI / 2); // Left side puff for right rotation
+                }
+
+
+                ctx.restore(); // Restore context state
+            }
+        }
+
+         // Helper to draw small rotational puffs
+         function drawThrusterPuff(relX, relY, angleOffset) {
+             const puffSize = 2 + Math.random() * 2;
+             const puffDist = 5 + Math.random() * 3;
+             ctx.beginPath();
+             ctx.arc(
+                 relX + Math.cos(angleOffset) * puffDist, // Relative X + offset direction
+                 relY + Math.sin(angleOffset) * puffDist, // Relative Y + offset direction
+                 puffSize,
+                 0, Math.PI * 2
+             );
+             ctx.fillStyle = `rgba(200, 200, 255, ${0.3 + Math.random() * 0.3})`; // Faint bluish white
+             ctx.fill();
+         }
+
+
+        // --- Particle Class (for explosions) ---
+        class Particle {
+             constructor(x, y, color) {
+                this.x = x;
+                this.y = y;
+                this.vx = (Math.random() - 0.5) * 6; // Spread out faster
+                this.vy = (Math.random() - 0.5) * 6 - 1; // Bias slightly upwards initially
+                this.radius = Math.random() * 3 + 1;
+                this.life = Math.random() * 40 + 20; // Shorter lifespan
+                this.initialLife = this.life;
+                this.color = color || `rgba(${150 + Math.random()*105}, ${Math.random()*150}, ${Math.random()*50}, 1)`; // Orange/Red/Yellow/Grayish
+            }
+
+            update() {
+                this.vy += GRAVITY * 2; // Particles affected by gravity too, maybe stronger?
+                this.x += this.vx;
+                this.y += this.vy;
+                this.vx *= 0.98; // Air resistance
+                this.vy *= 0.98;
+                this.life--;
+            }
+
+            draw() {
+                const alpha = Math.max(0, (this.life / this.initialLife) * 0.8);
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius * (this.life / this.initialLife), 0, Math.PI * 2); // Shrink as they fade
+                // Modify base color with alpha
+                const rgbaColor = this.color.replace(/[^,]+(?=\))/, alpha.toFixed(2)); // Replace alpha in rgba string
+                ctx.fillStyle = rgbaColor;
+                ctx.fill();
+            }
+        }
+
+        // --- Terrain Generation ---
+        function generateTerrain() {
+            terrain = [];
+            let y = canvas.height * (0.6 + Math.random() * 0.3); // Starting height
+            const segmentWidth = canvas.width / TERRAIN_SEGMENTS;
+            const maxDY = canvas.height * 0.1 * TERRAIN_ROUGHNESS; // Max height change per segment
+
+            // Generate potential landing pad indices
+            let padIndices = [];
+            while(padIndices.length < LANDING_PAD_COUNT) {
+                let index = Math.floor(Math.random() * (TERRAIN_SEGMENTS - 5)) + 2; // Avoid edges
+                // Ensure pads aren't too close
+                if (padIndices.every(pi => Math.abs(pi - index) > 10)) {
+                     padIndices.push(index);
+                }
+            }
+            padIndices.sort((a, b) => a - b); // Sort them
+
+            let padIndexCounter = 0;
+
+            for (let i = 0; i <= TERRAIN_SEGMENTS; i++) {
+                terrain.push({ x: i * segmentWidth, y: y, isPad: false });
+
+                // Check if this segment should start a landing pad
+                if (padIndexCounter < padIndices.length && i === padIndices[padIndexCounter]) {
+                    const padSegments = Math.ceil(LANDING_PAD_WIDTH / segmentWidth);
+                    for (let j = 1; j <= padSegments; j++) {
+                        i++;
+                        if (i > TERRAIN_SEGMENTS) break;
+                        terrain.push({ x: i * segmentWidth, y: y, isPad: true }); // Flat segment
+                    }
+                    terrain[terrain.length-1].isPad = true; // Mark last segment too
+                    padIndexCounter++;
+                } else {
+                    // Add random variation for non-pad segments
+                     y += (Math.random() - 0.5) * maxDY;
+                     // Clamp y to prevent going off screen (mostly)
+                     y = Math.max(canvas.height * 0.3, Math.min(canvas.height * 0.95, y));
+                }
+            }
+        }
+
+        // --- Star Generation ---
+        function generateStars() {
+            stars = [];
+            for (let i = 0; i < STAR_COUNT; i++) {
+                stars.push({
+                    x: Math.random() * canvas.width,
+                    y: Math.random() * canvas.height,
+                    radius: Math.random() * 1.2 + 0.3, // Varying sizes
+                    alpha: 0.5 + Math.random() * 0.5 // Varying brightness
+                });
+            }
+        }
+
+         // --- Drawing Functions ---
+        function drawStars() {
+            ctx.fillStyle = 'white';
+            stars.forEach(star => {
+                ctx.save();
+                ctx.globalAlpha = star.alpha;
+                ctx.beginPath();
+                ctx.arc(star.x, star.y, star.radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            });
+        }
+
+        function drawTerrain() {
+            ctx.beginPath();
+            ctx.moveTo(terrain[0].x, terrain[0].y);
+            for (let i = 1; i < terrain.length; i++) {
+                 // Draw line segment
+                 ctx.lineTo(terrain[i].x, terrain[i].y);
+
+                 // Style landing pads differently *during* path creation
+                 if (terrain[i-1].isPad && terrain[i].isPad) {
+                     ctx.strokeStyle = '#90EE90'; // Light Green for pad
+                     ctx.lineWidth = 3;
+                     ctx.stroke(); // Stroke the pad segment
+                     ctx.beginPath(); // Start a new path for the next segment
+                     ctx.moveTo(terrain[i].x, terrain[i].y);
+                 } else {
+                      ctx.strokeStyle = '#A0A0A0'; // Gray for normal terrain
+                      ctx.lineWidth = 1.5;
+                      // Don't stroke yet, wait until the end unless it was a pad
+                      if (i === terrain.length -1 || (terrain[i].isPad && !terrain[i+1]?.isPad) ) {
+                          ctx.stroke(); // Stroke the last normal segment or segment before pad
+                           ctx.beginPath(); // Start new path if needed
+                           if (i < terrain.length -1) ctx.moveTo(terrain[i].x, terrain[i].y);
+                      }
+                 }
+            }
+             // Fill below terrain (optional, adds depth)
+            /*
+            ctx.lineTo(canvas.width, canvas.height);
+            ctx.lineTo(0, canvas.height);
+            ctx.closePath();
+            ctx.fillStyle = '#333338'; // Darker gray fill
+            ctx.fill();
+            */
+        }
+
+        function drawParticles() {
+             for (let i = particles.length - 1; i >= 0; i--) {
+                particles[i].update();
+                particles[i].draw();
+                if (particles[i].life <= 0) {
+                    particles.splice(i, 1);
+                }
+            }
+        }
+
+
+        // --- Collision Detection ---
+        function checkCollisions() {
+            const feet = lander.getFeetPositions();
+            const pointsToCheck = [...feet, {x: lander.x, y: lander.y + lander.height / 2}]; // Check feet and bottom center
+
+            for (const point of pointsToCheck) {
+                 // Find the terrain segment directly below the point
+                let segmentIndex = terrain.findIndex(p => p.x >= point.x);
+                if (segmentIndex === -1) segmentIndex = terrain.length -1; // Point is past the last terrain vertex
+                if (segmentIndex === 0) segmentIndex = 1; // Point is before the first vertex
+
+                const p1 = terrain[segmentIndex - 1];
+                const p2 = terrain[segmentIndex];
+
+                // Basic check: Is the point below the line segment?
+                // Calculate the y-coordinate on the terrain line at the point's x-coordinate
+                const terrainY = p1.y + (p2.y - p1.y) * (point.x - p1.x) / (p2.x - p1.x);
+
+                if (point.y >= terrainY) {
+                    // Collision detected!
+                    handleCollision(p1, p2);
+                    return true; // Stop checking after first collision
+                }
+            }
+
+             // Check if out of bounds (top/sides)
+             if (lander.y < -lander.height || lander.x < -lander.width || lander.x > canvas.width + lander.width) {
+                 gameOver("Lost in Space!");
+                 return true;
+             }
+
+            return false;
+        }
+
+        function handleCollision(seg1, seg2) {
+             const speed = Math.sqrt(lander.vx * lander.vx + lander.vy * lander.vy);
+             const angleOK = Math.abs(lander.angle) < SAFE_LANDING_ANGLE;
+             const speedOK = speed < SAFE_LANDING_SPEED;
+             const isPad = seg1.isPad && seg2.isPad;
+
+             if (isPad && angleOK && speedOK) {
+                 gameState = 'landed';
+                 lander.vx = 0; // Stop movement
+                 lander.vy = 0;
+                 lander.angle = 0; // Straighten up
+                 // Snap to pad height
+                 lander.y = seg1.y - lander.height / 2 + 1; // Adjust slightly based on lander draw origin
+             } else {
+                 gameState = 'crashed';
+                 createExplosion(lander.x, lander.y);
+             }
+        }
+
+        function createExplosion(x, y) {
+             const numParticles = 50 + Math.random() * 30;
+             for (let i = 0; i < numParticles; i++) {
+                 particles.push(new Particle(x, y));
+             }
+              // Add some gray "smoke" particles
+             for (let i = 0; i < 20; i++) {
+                 particles.push(new Particle(x, y, `rgba(100, 100, 100, ${0.5 + Math.random()*0.3})`));
+             }
+        }
+
+
+        // --- UI Update ---
+        function updateUI() {
+            // Find terrain height directly below lander
+             let terrainYBelow = canvas.height; // Default to bottom if not over terrain
+             let segmentIndex = terrain.findIndex(p => p.x >= lander.x);
+             if (segmentIndex > 0) {
+                 const p1 = terrain[segmentIndex - 1];
+                 const p2 = terrain[segmentIndex];
+                 terrainYBelow = p1.y + (p2.y - p1.y) * (lander.x - p1.x) / (p2.x - p1.x);
+             } else if (segmentIndex === 0) {
+                  terrainYBelow = terrain[0].y;
+             }
+
+             const altitude = terrainYBelow - (lander.y + lander.height / 2); // Approx altitude above ground
+
+             altEl.textContent = altitude.toFixed(1);
+             hVelEl.textContent = lander.vx.toFixed(1);
+             vVelEl.textContent = lander.vy.toFixed(1);
+             angleEl.textContent = lander.angle.toFixed(2);
+             fuelValEl.textContent = Math.max(0, Math.round(lander.fuel));
+
+             // Update fuel bar width
+             const fuelPercent = Math.max(0, lander.fuel / initialFuel) * 100;
+             fuelLevelEl.style.width = `${fuelPercent}%`;
+             // Change fuel bar color based on level
+             if (fuelPercent < 25) fuelLevelEl.style.backgroundColor = '#FF6347'; // Red
+             else if (fuelPercent < 50) fuelLevelEl.style.backgroundColor = '#FFA500'; // Orange
+             else fuelLevelEl.style.backgroundColor = '#FFD700'; // Gold
+
+             // Add danger colors to velocity if close to crashing limits
+             const speed = Math.sqrt(lander.vx * lander.vx + lander.vy * lander.vy);
+             vVelEl.className = lander.vy > SAFE_LANDING_SPEED * 0.8 ? 'value danger' : 'value';
+             hVelEl.className = Math.abs(lander.vx) > SAFE_LANDING_SPEED * 0.8 ? 'value danger' : 'value';
+             angleEl.className = Math.abs(lander.angle) > SAFE_LANDING_ANGLE * 0.9 ? 'value danger' : 'value';
+             altEl.className = altitude < 20 ? 'value danger' : 'value';
+        }
+
+         // --- Game Over ---
+        function gameOver(message) {
+            gameState = 'crashed'; // Treat "Lost in Space" as a crash scenario
+            gameOverMsgEl.textContent = message;
+            gameOverMsgEl.className = 'danger';
+            gameOverEl.style.display = 'block';
+        }
+
+        function gameWon() {
+            gameState = 'landed';
+            gameOverMsgEl.textContent = "The Eagle Has Landed!";
+            gameOverMsgEl.className = 'safe';
+            gameOverEl.style.display = 'block';
+         }
+
+
+        // --- Game Loop ---
+        function animate() {
+            // 1. Clear Canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 2. Draw Background
+            drawStars();
+
+            // 3. Draw Terrain
+            drawTerrain();
+
+            // 4. Handle Input & Update Lander (if playing)
+            if (gameState === 'playing') {
+                if (keys['ArrowUp'] || keys['w']) {
+                    lander.applyThrust();
+                }
+                if (keys['ArrowLeft'] || keys['a']) {
+                    lander.rotate(-1); // Left
+                }
+                if (keys['ArrowRight'] || keys['d']) {
+                    lander.rotate(1); // Right
+                }
+
+                lander.update();
+
+                // 5. Check Collisions
+                checkCollisions(); // This can change gameState
+            }
+
+            // 6. Draw Lander (unless crashed)
+            if (gameState !== 'crashed') {
+                lander.draw();
+            }
+
+            // 7. Draw Particles (explosions, etc.)
+            drawParticles();
+
+             // 8. Update UI Text/Indicators
+            updateUI();
+
+            // 9. Handle Win/Loss Display
+            if(gameState === 'landed' && gameOverEl.style.display === 'none') {
+                gameWon();
+            } else if (gameState === 'crashed' && particles.length === 0 && gameOverEl.style.display === 'none') {
+                // Show crash message only after explosion particles are gone
+                gameOver("CRASHED!");
+            }
+
+            // 10. Request Next Frame
+            requestAnimationFrame(animate);
+        }
+
+        // --- Input Handlers ---
+        window.addEventListener('keydown', (e) => {
+            // Use key property for better handling of non-US layouts
+            const key = e.key.toLowerCase();
+            keys[key] = true;
+            keys[e.code] = true; // Also store by code (ArrowUp etc)
+
+            // Prevent default browser action for arrow keys
+            if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' '].includes(key)) {
+                e.preventDefault();
+            }
+
+            // Restart game
+             if ((gameState === 'landed' || gameState === 'crashed') && key === 'r') {
+                 initGame();
+             }
+        });
+
+        window.addEventListener('keyup', (e) => {
+             const key = e.key.toLowerCase();
+             keys[key] = false;
+             keys[e.code] = false;
+        });
+
+        // --- Initialization ---
+        function initGame() {
+            // Resize canvas
+            canvas.width = window.innerWidth * 0.8;
+            canvas.height = window.innerHeight * 0.9;
+
+             // Center canvas if needed (using flexbox on body handles this)
+
+            // Generate elements
+            generateStars();
+            generateTerrain();
+
+            // Create lander
+            const startX = canvas.width / 4 + Math.random() * canvas.width / 2; // Start somewhere in middle horizontally
+            const startY = canvas.height * 0.1; // Start near the top
+            lander = new Lander(startX, startY, 1000); // Initial fuel
+
+            // Reset state
+            keys = {};
+            particles = [];
+            gameState = 'playing';
+            gameOverEl.style.display = 'none'; // Hide game over message
+
+            // Make sure UI is updated once initially
+             updateUI();
+        }
+
+
+        // --- Start ---
+        initGame(); // Setup the first game
+        animate(); // Start the loop
+
+        // Optional: Resize listener
+         window.addEventListener('resize', () => {
+            // Basic resize handling: re-init the whole game might be simplest
+            // Or, try to scale elements (more complex)
+            initGame(); // Re-initialize on resize for simplicity here
+         });
+
+    </script>
+</body>
+</html>

@@ -1,0 +1,268 @@
+/* --- Global Resets & Base Styles --- */
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html {
+    font-size: 16px; /* Base font size */
+}
+
+body {
+    background-color: #1a1a1a; /* Dark background */
+    color: #c5c5c5; /* Light grey text */
+    font-family: 'Share Tech Mono', monospace; /* Retro monospaced font */
+    line-height: 1.6;
+    min-height: 100vh;
+    padding: 1rem;
+    position: relative; /* Needed for overlay */
+    background-image: radial-gradient(circle at top left, rgba(30, 40, 60, 0.3), transparent 60%),
+                      radial-gradient(circle at bottom right, rgba(60, 30, 40, 0.2), transparent 70%);
+    background-attachment: fixed;
+}
+
+/* --- Optional Scanline Effect --- */
+.scanline-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none; /* Allows clicking through */
+    background: linear-gradient(
+        to bottom,
+        rgba(18, 16, 16, 0) 50%,
+        rgba(0, 0, 0, 0.15) 50%
+    );
+    background-size: 100% 4px; /* Adjust thickness and spacing */
+    z-index: 100;
+    opacity: 0.4; /* Adjust intensity */
+}
+
+
+/* --- Layout Container --- */
+.container {
+    max-width: 900px;
+    margin: 2rem auto;
+    padding: 1rem;
+    background-color: rgba(10, 10, 15, 0.6); /* Slightly transparent dark panel */
+    border: 1px solid #333;
+    box-shadow: 0 0 15px rgba(0, 0, 0, 0.5);
+}
+
+/* --- Header --- */
+.main-header {
+    margin-bottom: 2rem;
+    text-align: center;
+    padding: 1rem 0;
+    border-bottom: 1px solid #4a5a7a; /* Muted blue border */
+}
+
+.main-header .corner-cut {
+    /* Simulates the cut corner paper look */
+    position: relative;
+    padding: 1.5rem;
+    background-color: #1f2a3f; /* Dark blue-grey */
+    clip-path: polygon(0% 0%, 95% 0%, 100% 10%, 100% 100%, 0% 100%); /* Cut top-right corner */
+    display: inline-block; /* Shrink to content */
+    border: 1px solid #4a5a7a;
+}
+
+.main-header h1 {
+    font-family: 'Orbitron', sans-serif;
+    color: #e09040; /* Amber/Orange highlight */
+    font-size: 2.5rem;
+    letter-spacing: 2px;
+    text-shadow: 0 0 5px rgba(224, 144, 64, 0.5);
+    margin-bottom: 0.5rem;
+    font-weight: 600;
+}
+
+.main-header .subtitle {
+    color: #9ab; /* Lighter blue-grey */
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+/* --- Main Content --- */
+.content-area {
+    padding: 1rem 0;
+}
+
+.intro-panel, .app-grid {
+    background-color: rgba(25, 30, 40, 0.7);
+    border: 1px solid #2a3a5a;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+    box-shadow: inset 0 0 10px rgba(0,0,0,0.4);
+}
+
+.intro-panel h2, .app-grid h2 {
+    font-family: 'Orbitron', sans-serif;
+    color: #6a8bba; /* Muted blue */
+    margin-bottom: 1rem;
+    border-bottom: 1px solid #4a5a7a;
+    padding-bottom: 0.5rem;
+    font-size: 1.4rem;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+}
+
+.icon {
+    color: #e09040; /* Amber/Orange */
+    margin-right: 0.75rem;
+    font-size: 1.2em;
+}
+
+/* --- App Links Grid --- */
+.app-grid {
+    /* Using simple stacking, can use flex/grid for more complex layouts */
+}
+
+.app-link-wrapper {
+    margin-bottom: 1.5rem;
+}
+.app-link-wrapper:last-child {
+    margin-bottom: 0;
+}
+
+.app-link {
+    display: flex;
+    align-items: center;
+    background-color: #101520;
+    border: 1px solid #334055;
+    padding: 1rem 1.5rem;
+    text-decoration: none;
+    color: #c5c5c5;
+    transition: background-color 0.3s ease, border-color 0.3s ease, transform 0.2s ease;
+    position: relative;
+    overflow: hidden; /* For the arrow */
+}
+
+.app-link:hover,
+.app-link:focus {
+    background-color: #1a2535;
+    border-color: #6a8bba; /* Highlight border on hover */
+    color: #fff;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+}
+
+.app-icon {
+    font-size: 2rem;
+    margin-right: 1.5rem;
+    flex-shrink: 0;
+    width: 50px; /* Fixed width for alignment */
+    text-align: center;
+}
+.app-icon.water { color: #6a8bba; } /* Blue for water */
+.app-icon.lander { color: #e0e0e0; } /* Light grey for moon */
+
+.app-details {
+    flex-grow: 1;
+}
+
+.app-link h3 {
+    font-family: 'Orbitron', sans-serif;
+    color: #d5d5d5;
+    margin-bottom: 0.25rem;
+    font-size: 1.1rem;
+    font-weight: 500;
+}
+
+.app-link:hover h3,
+.app-link:focus h3 {
+    color: #e09040; /* Highlight title on hover */
+}
+
+.app-link p {
+    font-size: 0.85rem;
+    color: #9ab;
+    line-height: 1.4;
+}
+
+.app-link .arrow {
+    font-size: 1.5rem;
+    color: #4a5a7a;
+    transition: color 0.3s ease, transform 0.3s ease;
+    margin-left: 1rem;
+}
+
+.app-link:hover .arrow,
+.app-link:focus .arrow {
+    color: #e09040;
+    transform: translateX(5px);
+}
+
+
+/* --- Footer --- */
+.main-footer {
+    border-top: 1px solid #333;
+    padding: 1.5rem 0 0.5rem 0;
+    margin-top: 2rem;
+    text-align: center;
+    font-size: 0.8rem;
+    color: #667;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+/* --- Responsive Adjustments (Basic) --- */
+@media (max-width: 768px) {
+    html {
+        font-size: 14px;
+    }
+    .container {
+        margin: 1rem;
+        padding: 0.5rem;
+    }
+    .main-header h1 {
+        font-size: 2rem;
+    }
+    .app-link {
+        padding: 0.8rem 1rem;
+    }
+    .app-icon {
+        font-size: 1.5rem;
+        margin-right: 1rem;
+        width: 40px;
+    }
+}
+
+@media (max-width: 480px) {
+    .main-header .corner-cut {
+        padding: 1rem;
+        clip-path: polygon(0% 0%, 92% 0%, 100% 15%, 100% 100%, 0% 100%);
+    }
+    .main-header h1 {
+        font-size: 1.6rem;
+    }
+    .main-header .subtitle {
+        font-size: 0.8rem;
+    }
+    .app-link {
+        flex-direction: column;
+        align-items: flex-start;
+        text-align: left;
+    }
+    .app-icon {
+       margin-bottom: 0.5rem;
+       width: auto; /* Allow icon to determine its width */
+       text-align: left;
+    }
+    .app-link .arrow {
+        position: absolute;
+        right: 1rem;
+        top: 50%;
+        transform: translateY(-50%);
+    }
+     .app-link:hover .arrow,
+     .app-link:focus .arrow {
+        transform: translateY(-50%) translateX(5px); /* Adjust hover transform */
+     }
+}

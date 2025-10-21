@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Music Generator with Chords</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            background-color: #0f172a; /* slate-900 */
+        }
+        button, select {
+            transition: all 0.15s ease-in-out;
+        }
+        button:disabled, select:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        .icon {
+            width: 1.5em;
+            height: 1.5em;
+            display: inline-block;
+            vertical-align: middle;
+        }
+        .note-block {
+            transition: background-color 0.1s ease-in-out, border-color 0.1s ease-in-out, color 0.1s ease-in-out, box-shadow 0.1s ease-in-out;
+            border: 2px solid transparent;
+        }
+        .note-block.active {
+            background-color: #06b6d4 !important; /* Tailwind cyan-500 */
+            border-color: #22d3ee; /* Tailwind cyan-400 */
+            color: white !important;
+            box-shadow: 0 0 8px 2px #06b6d4;
+        }
+        select {
+            appearance: none;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 0.7rem center;
+            background-size: 1.2em;
+            padding-right: 2.5rem;
+        }
+        select option {
+             background-color: #374151; /* gray-700 */
+             color: #f3f4f6; /* gray-100 */
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-slate-900 to-black min-h-screen flex items-center justify-center p-4">
+
+    <div class="bg-slate-800 p-8 rounded-xl shadow-lg max-w-3xl w-full text-center border border-slate-700">
+        <h1 class="text-3xl font-bold mb-2 text-white">Music Generator</h1>
+        <p class="text-gray-400 mb-6">Select style & instrument, then click Play to hear melody and chords.</p>
+
+        <div class="flex flex-col sm:flex-row justify-center gap-4 mb-6">
+            <div class="flex-1">
+                <label for="styleSelect" class="block text-sm font-medium text-gray-300 mb-1">Style:</label>
+                <select id="styleSelect" name="style" class="w-full mt-1 block pl-3 pr-10 py-2 text-base bg-slate-700 text-gray-200 border border-slate-600 focus:outline-none focus:ring-cyan-500 focus:border-cyan-500 sm:text-sm rounded-md cursor-pointer">
+                    <option value="ambient_major">Ambient Major</option>
+                    <option value="ambient_minor">Ambient Minor</option>
+                    <option value="bluesy">Bluesy</option>
+                    <option value="mysterious">Mysterious</option>
+                </select>
+            </div>
+             <div class="flex-1">
+                <label for="instrumentSelect" class="block text-sm font-medium text-gray-300 mb-1">Melody Instrument:</label>
+                 <select id="instrumentSelect" name="instrument" class="w-full mt-1 block pl-3 pr-10 py-2 text-base bg-slate-700 text-gray-200 border border-slate-600 focus:outline-none focus:ring-cyan-500 focus:border-cyan-500 sm:text-sm rounded-md cursor-pointer">
+                    <option value="default">Default Synth</option>
+                    <option value="fm">FM Synth</option>
+                    <option value="am">AM Synth</option>
+                    <option value="mono">Mono Synth</option>
+                </select>
+            </div>
+        </div>
+
+        <div id="visualization" class="mb-8 flex justify-center items-center flex-wrap gap-2 p-4 bg-slate-900 rounded-lg min-h-[6rem] border border-slate-700">
+            <span class="text-gray-500 text-sm">Melody visualization appears here</span>
+        </div>
+
+        <div id="status" class="mb-6 text-sm font-medium text-cyan-400 h-5">
+            Ready
+        </div>
+
+        <div class="flex justify-center space-x-4">
+            <button id="playButton" class="bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-3 px-6 rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-opacity-75 flex items-center space-x-2" title="Play Music">
+                <img src="https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/play.svg" alt="Play" class="icon filter invert" />
+                <span>Play</span>
+            </button>
+            <button id="stopButton" class="bg-rose-700 hover:bg-rose-800 text-white font-bold py-3 px-6 rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-rose-600 focus:ring-opacity-75 flex items-center space-x-2" title="Stop Music" disabled>
+                 <img src="https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/stop-circle.svg" alt="Stop" class="icon filter invert" />
+                <span>Stop</span>
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // --- Global Variables ---
+        let melodySynth = null; // Renamed from synth
+        let chordSynth = null;  // Synth for playing chords
+        let reverb = null;
+        let melodyPart = null; // Renamed from part
+        let chordPart = null;  // Part for scheduling chords
+        let isInitialized = false;
+        let isPlaying = false;
+        let noteElements = {};
+        let selectedInstrumentType = 'default';
+        let selectedStyle = 'ambient_major';
+
+        // --- DOM Elements ---
+        const playButton = document.getElementById('playButton');
+        const stopButton = document.getElementById('stopButton');
+        const statusDiv = document.getElementById('status');
+        const visualizationDiv = document.getElementById('visualization');
+        const instrumentSelect = document.getElementById('instrumentSelect');
+        const styleSelect = document.getElementById('styleSelect');
+
+        // --- Music Configuration ---
+        const scales = { /* ... (same scales) ... */
+             'ambient_major': ['C4', 'D4', 'E4', 'G4', 'A4', 'C5', 'D5', 'E5', 'G5', 'A5'],
+            'ambient_minor': ['C4', 'Eb4', 'F4', 'G4', 'Bb4', 'C5', 'Eb5', 'F5', 'G5', 'Bb5'],
+            'bluesy':        ['C4', 'Eb4', 'F4', 'F#4', 'G4', 'Bb4', 'C5', 'Eb5', 'F5', 'F#5', 'G5', 'Bb5'],
+            'mysterious':    ['C4', 'D4', 'Eb4', 'F4', 'G4', 'Ab4', 'B4', 'C5', 'D5', 'Eb5', 'F5', 'G5', 'Ab5', 'B5']
+        };
+        const getCurrentScaleNotes = () => scales[selectedStyle] || scales['ambient_major'];
+        const getCurrentUniqueNotes = () => {
+             const notes = getCurrentScaleNotes();
+             return [...new Set(notes)].sort((a, b) => Tone.Frequency(a).toFrequency() - Tone.Frequency(b).toFrequency());
+        };
+
+        // --- Chord Progressions ---
+        // Simple 2-chord progressions for a 2-measure loop
+        const LOOP_DURATION = '2m';
+        const chordProgressions = {
+             'ambient_major': [ // I - V (Cmaj - Gmaj)
+                { time: '0:0:0', notes: ['C3', 'E3', 'G3'], duration: '1m' },
+                { time: '1:0:0', notes: ['G3', 'B3', 'D4'], duration: '1m' }
+            ],
+            'ambient_minor': [ // i - VI (Cmin - Abmaj)
+                { time: '0:0:0', notes: ['C3', 'Eb3', 'G3'], duration: '1m' },
+                { time: '1:0:0', notes: ['Ab3', 'C4', 'Eb4'], duration: '1m' }
+            ],
+            'bluesy': [ // I7 - IV7 (C7 - F7) - Using simpler 3-note voicings
+                { time: '0:0:0', notes: ['C3', 'E3', 'Bb3'], duration: '1m' }, // C7
+                { time: '1:0:0', notes: ['F3', 'A3', 'Eb4'], duration: '1m' }  // F7
+            ],
+            'mysterious': [ // i - V (Cmin - Gmaj) - Harmonic minor feel
+                 { time: '0:0:0', notes: ['C3', 'Eb3', 'G3'], duration: '1m' }, // C Minor
+                { time: '1:0:0', notes: ['G3', 'B3', 'D4'], duration: '1m' }  // G Major (leading tone B)
+            ]
+        };
+        const CHORD_VELOCITY = 0.4; // Chords are softer
+
+        // --- Melody Generation Parameters ---
+        const NOTE_PROBABILITY = 0.70;
+        const ROOT_NOTE_BIAS = 0.25;
+        const POSSIBLE_DURATIONS = ['16n', '8n', '8n.', '4n'];
+
+        // --- Core Functions ---
+
+        /** Creates the Melody synth instance */
+        function createMelodySynth(type) {
+             if (melodySynth) melodySynth.dispose();
+            let newSynth; console.log(`Creating melody synth: ${type}`);
+            switch (type) { /* Cases for fm, am, mono, default */
+                 case 'fm': newSynth = new Tone.FMSynth(); break;
+                 case 'am': newSynth = new Tone.AMSynth(); break;
+                 case 'mono': newSynth = new Tone.MonoSynth(); break; // MonoSynth is good for leads
+                 case 'default': default: newSynth = new Tone.Synth(); break;
+            }
+             switch (type) { /* Setting synth parameters */
+                case 'fm': newSynth.set({ harmonicity: 3, modulationIndex: 10, oscillator: { type: 'sine' }, envelope: { attack: 0.01, decay: 0.1, sustain: 0.5, release: 0.8 }, modulation: { type: 'square' }, modulationEnvelope: { attack: 0.1, decay: 0.2, sustain: 0.3, release: 0.8 } }); break;
+                case 'am': newSynth.set({ harmonicity: 2, oscillator: { type: 'sawtooth' }, envelope: { attack: 0.05, decay: 0.2, sustain: 0.4, release: 0.9 }, modulation: { type: 'sine' }, modulationEnvelope: { attack: 0.1, decay: 0.3, sustain: 0.3, release: 0.9 } }); break;
+                case 'mono': newSynth.set({ volume: -6, oscillator: { type: 'sawtooth' }, envelope: { attack: 0.02, decay: 0.1, sustain: 0.4, release: 0.8 }, filterEnvelope: { attack: 0.01, decay: 0.1, sustain: 0.3, release: 1, baseFrequency: 300, octaves: 3 } }); break; // Tweaked MonoSynth
+                case 'default': default: newSynth.set({ oscillator: { type: 'amsine' }, envelope: { attack: 0.1, decay: 0.2, sustain: 0.5, release: 1.0 } }); break;
+            }
+            if (reverb) newSynth.connect(reverb); else newSynth.toDestination();
+            return newSynth;
+        }
+
+        /** Creates the Chord synth instance */
+        function createChordSynth() {
+             if (chordSynth) chordSynth.dispose();
+             console.log("Creating chord synth (PolySynth)");
+             // Use PolySynth with a basic Synth voice for chords
+             let newChordSynth = new Tone.PolySynth(Tone.Synth, {
+                 maxPolyphony: 6, // Max notes at once
+                 volume: -14,     // Lower volume for chords
+                 oscillator: { type: 'triangle' }, // Softer waveform
+                 envelope: { attack: 0.05, decay: 0.1, sustain: 0.7, release: 0.8 } // Slightly longer sustain/release
+             });
+            if (reverb) newChordSynth.connect(reverb); else newChordSynth.toDestination();
+            return newChordSynth;
+        }
+
+
+        /** Creates/Recreates the visualization */
+        function createOrUpdateVisualization() { /* ... (same as before) ... */
+             const uniqueNotes = getCurrentUniqueNotes();
+            visualizationDiv.innerHTML = ''; noteElements = {};
+            if (uniqueNotes.length === 0) { visualizationDiv.innerHTML = '<span class="text-gray-500 text-sm">No notes in selected scale</span>'; return; }
+            uniqueNotes.forEach(note => {
+                const noteEl = document.createElement('div');
+                noteEl.classList.add('note-block', 'bg-slate-700', 'text-gray-300', 'font-mono', 'text-xs', 'sm:text-sm', 'p-1', 'sm:p-2', 'rounded-md', 'w-10', 'h-10', 'sm:w-12', 'sm:h-12', 'flex', 'items-center', 'justify-center', 'shrink-0');
+                noteEl.textContent = note; noteEl.dataset.note = note;
+                visualizationDiv.appendChild(noteEl); noteElements[note] = noteEl;
+            });
+            console.log("Visualization updated for notes:", uniqueNotes);
+        }
+
+        /** Initializes audio components */
+        function initializeAudio() {
+            try {
+                if (!reverb) { reverb = new Tone.Reverb({ decay: 4, wet: 0.3 }).toDestination(); console.log("Reverb initialized."); } // Slightly less wet reverb
+
+                // Create Synths
+                melodySynth = createMelodySynth(selectedInstrumentType);
+                chordSynth = createChordSynth();
+
+                // Initialize Melody Part
+                if (!melodyPart) {
+                    melodyPart = new Tone.Part((time, value) => {
+                        if (value && value.note && melodySynth) {
+                            melodySynth.triggerAttackRelease(value.note, value.duration, time, value.velocity);
+                            Tone.Draw.schedule(() => activateNoteVisual(value.note), time);
+                            const noteDurationSeconds = Tone.Time(value.duration).toSeconds();
+                            Tone.Draw.schedule(() => deactivateNoteVisual(value.note), time + noteDurationSeconds * 0.9);
+                        }
+                    }, []);
+                    melodyPart.loop = true;
+                    melodyPart.loopEnd = LOOP_DURATION;
+                    console.log("Melody Part initialized.");
+                }
+
+                 // Initialize Chord Part
+                if (!chordPart) {
+                    chordPart = new Tone.Part((time, value) => {
+                         if (value && value.notes && chordSynth) {
+                             // Play the chord notes with specified duration and velocity
+                            chordSynth.triggerAttackRelease(value.notes, value.duration, time, value.velocity);
+                         }
+                    }, []);
+                    chordPart.loop = true;
+                    chordPart.loopEnd = LOOP_DURATION;
+                     console.log("Chord Part initialized.");
+                }
+
+
+                createOrUpdateVisualization(); isInitialized = true;
+                console.log("Audio initialized successfully."); updateStatus("Ready to play");
+            } catch (error) { /* Error handling ... */
+                 console.error("Error initializing audio:", error); updateStatus("Error initializing audio. Please refresh.");
+                playButton.disabled = true; stopButton.disabled = true; instrumentSelect.disabled = true; styleSelect.disabled = true;
+            }
+        }
+
+        // --- Visualization Functions ---
+        function activateNoteVisual(note) { clearActiveVisuals(); const noteEl = noteElements[note]; if (noteEl) noteEl.classList.add('active'); }
+        function deactivateNoteVisual(note) { const noteEl = noteElements[note]; if (noteEl) noteEl.classList.remove('active'); }
+        function clearActiveVisuals() { Object.values(noteElements).forEach(el => { el.classList.remove('active'); el.style.boxShadow = ''; }); }
+
+        /** Starts music playback using Tone.Part for melody and chords */
+        async function startMusic() {
+            // --- Initialization Check ---
+             if (!isInitialized || Tone.context.state !== 'running') {
+                 updateStatus("Initializing Audio..."); playButton.disabled = true;
+                try { await Tone.start(); console.log('Audio Context started/resumed'); initializeAudio(); }
+                catch (error) { console.error("Error starting Tone.js context:", error); updateStatus("Failed to start audio."); playButton.disabled = false; return; }
+                finally { playButton.disabled = isPlaying; }
+            }
+             if (!isInitialized || !melodyPart || !chordPart || !melodySynth || !chordSynth) {
+                 console.error("Audio components not ready."); updateStatus("Initialization error."); return;
+            }
+
+
+            // --- Generate Melody Events ---
+            melodyPart.clear();
+            const currentNotes = getCurrentScaleNotes();
+            if (currentNotes.length === 0) { updateStatus("Selected style has no notes."); return; }
+            const rootNote = currentNotes[0];
+            const melodyEvents = [];
+            const loopDurationSeconds = Tone.Time(LOOP_DURATION).toSeconds();
+            const stepIntervalSeconds = Tone.Time('16n').toSeconds();
+            let melodyTimeSeconds = 0;
+
+            while (melodyTimeSeconds < loopDurationSeconds) {
+                 if (Math.random() < NOTE_PROBABILITY) {
+                     let noteToPlay;
+                     const randomChoice = Math.random();
+                     if (randomChoice < ROOT_NOTE_BIAS && rootNote) { noteToPlay = rootNote; }
+                     else { noteToPlay = currentNotes[Math.floor(Math.random() * currentNotes.length)]; }
+                     const duration = POSSIBLE_DURATIONS[Math.floor(Math.random() * POSSIBLE_DURATIONS.length)];
+                     const velocity = 0.6 + Math.random() * 0.4; // Melody velocity 0.6-1.0
+                     const eventValue = { note: noteToPlay, duration: duration, velocity: velocity };
+                     melodyPart.add(melodyTimeSeconds, eventValue);
+                     melodyTimeSeconds += Tone.Time(duration).toSeconds();
+                 } else {
+                     melodyTimeSeconds += stepIntervalSeconds; // Rest
+                 }
+            }
+            console.log(`Generated ${melodyPart.length} melody events`);
+
+            // --- Generate Chord Events ---
+            chordPart.clear();
+            const progression = chordProgressions[selectedStyle] || chordProgressions['ambient_major'];
+            progression.forEach(chordEvent => {
+                chordPart.add(chordEvent.time, {
+                    notes: chordEvent.notes,
+                    duration: chordEvent.duration,
+                    velocity: CHORD_VELOCITY // Use fixed softer velocity for chords
+                });
+            });
+             console.log(`Generated ${chordPart.length} chord events`);
+
+
+            // --- Start Playback ---
+            clearActiveVisuals();
+            melodyPart.start(0);
+            chordPart.start(0); // Start chord part at the same time
+            Tone.Transport.start();
+
+            isPlaying = true;
+            updateUI();
+            updateStatus("Playing...");
+            console.log("Music started with style:", selectedStyle);
+        }
+
+        /** Stops music playback */
+        function stopMusic() {
+            if (!isInitialized || !isPlaying) return;
+            Tone.Transport.stop();
+            if (melodyPart) { melodyPart.stop(0); melodyPart.clear(); }
+            if (chordPart) { chordPart.stop(0); chordPart.clear(); }
+            if (melodySynth) { // Stop melody synth
+                 if (typeof melodySynth.releaseAll === 'function') melodySynth.releaseAll();
+                 else if (typeof melodySynth.triggerRelease === 'function') melodySynth.triggerRelease();
+            }
+             if (chordSynth) { chordSynth.releaseAll(); } // Stop chord synth
+
+            Tone.Draw.cancel(); clearActiveVisuals();
+            isPlaying = false; updateUI(); updateStatus("Stopped"); console.log("Music stopped");
+        }
+
+        // --- UI Update Functions ---
+        function updateStatus(message) { statusDiv.textContent = message; }
+        function updateUI() { /* ... (same as before) ... */
+             playButton.disabled = isPlaying; stopButton.disabled = !isPlaying;
+            instrumentSelect.disabled = isPlaying; styleSelect.disabled = isPlaying;
+        }
+
+        // --- Event Listeners ---
+        playButton.addEventListener('click', () => { if (!isPlaying) { startMusic().catch(error => { console.error("Error during startMusic:", error); updateStatus("Error starting playback."); isPlaying = false; updateUI(); }); } });
+        stopButton.addEventListener('click', () => { if (isPlaying) { stopMusic(); } });
+        instrumentSelect.addEventListener('change', (event) => { // Now controls melody synth
+             selectedInstrumentType = event.target.value; console.log(`Melody Instrument selected: ${selectedInstrumentType}`);
+            if (isInitialized) { if (isPlaying) stopMusic(); melodySynth = createMelodySynth(selectedInstrumentType); updateStatus(`Melody instrument changed. Press Play.`); } // Recreate melody synth
+            else { updateStatus(`Melody instrument set. Press Play.`); }
+            isPlaying = false; updateUI();
+        });
+        styleSelect.addEventListener('change', (event) => { // Also affects chords now
+             selectedStyle = event.target.value; console.log(`Style selected: ${selectedStyle}`);
+            if (isInitialized) { if (isPlaying) stopMusic(); createOrUpdateVisualization(); updateStatus(`Style changed. Press Play.`); }
+            else { updateStatus(`Style set. Press Play.`); }
+            isPlaying = false; updateUI();
+        });
+
+        // Initial UI setup
+        updateUI();
+        createOrUpdateVisualization(); // Update viz on load
+
+    </script>
+
+</body>
+</html>
