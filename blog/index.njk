@@ -1,0 +1,23 @@
+---
+layout: layout.njk
+title: Comm-Link Archive
+---
+
+Welcome to the internal communications network. Archival records of experimental development are stored below:
+
+<div style="margin-top: 2rem;">
+{% for post in collections.post | reverse %}
+  <div class="app-link-wrapper">
+      <a href="/blog{{ post.url }}" class="app-link">
+          <div class="app-icon lander">[&equiv;]</div>
+          <div class="app-details">
+              <h3>{{ post.data.title }}</h3>
+              <p>{{ post.data.description }}</p>
+          </div>
+          <span class="arrow">&gt;</span>
+      </a>
+  </div>
+{% else %}
+  <p>No transmissions intercepted.</p>
+{% endfor %}
+</div>
