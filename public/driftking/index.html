@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Drift King - Top-Down Simulator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
+        
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #0a0a0a;
+            font-family: 'Inter', sans-serif;
+        }
+        
+        canvas {
+            image-rendering: pixelated;
+        }
+
+        .hud-shadow {
+            text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+        }
+
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1f2937; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #f59e0b; 
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body class="w-screen h-screen bg-neutral-950 flex items-center justify-center overflow-hidden">
+    <div id="game-container" class="relative w-full h-full flex items-center justify-center bg-black">
+        <!-- Main Menu -->
+        <div id="main-menu" class="absolute inset-0 flex flex-col items-center justify-center bg-gray-900 text-white z-20 bg-opacity-95">
+            <h1 class="text-6xl font-black italic tracking-tighter mb-2 text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-red-500">
+                DRIFT KING
+            </h1>
+            <p class="text-gray-400 mb-12 text-lg tracking-wide uppercase">Top-Down Simulation</p>
+
+            <div id="track-list" class="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl w-full px-8">
+                <!-- Track buttons will be injected here -->
+            </div>
+
+            <div class="mt-12 bg-gray-800 p-6 rounded-xl border border-gray-700 text-center max-w-md">
+                <h4 class="text-yellow-400 font-bold mb-4">CONTROLS</h4>
+                <div class="grid grid-cols-2 gap-4 text-sm text-gray-300">
+                    <div class="flex items-center justify-center space-x-2">
+                        <kbd class="px-2 py-1 bg-gray-700 rounded border-b-2 border-gray-600">W</kbd>
+                        <span>GAS</span>
+                    </div>
+                    <div class="flex items-center justify-center space-x-2">
+                        <kbd class="px-2 py-1 bg-gray-700 rounded border-b-2 border-gray-600">S</kbd>
+                        <span>BRAKE</span>
+                    </div>
+                    <div class="flex items-center justify-center space-x-2">
+                        <kbd class="px-2 py-1 bg-gray-700 rounded border-b-2 border-gray-600">A</kbd>
+                        <span>LEFT</span>
+                    </div>
+                    <div class="flex items-center justify-center space-x-2">
+                        <kbd class="px-2 py-1 bg-gray-700 rounded border-b-2 border-gray-600">D</kbd>
+                        <span>RIGHT</span>
+                    </div>
+                    <div class="flex items-center justify-center col-span-2 space-x-2">
+                        <kbd class="px-8 py-1 bg-gray-700 rounded border-b-2 border-gray-600">SPACE</kbd>
+                        <span>HANDBRAKE</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Game Interface -->
+        <div id="game-interface" class="hidden relative w-full h-full flex items-center justify-center">
+            <canvas id="game-canvas" class="max-w-full max-h-full shadow-2xl rounded-lg border border-gray-800"></canvas>
+            
+            <!-- HUD -->
+            <div class="absolute top-4 left-4 pointer-events-none select-none">
+                <div class="bg-gray-900 bg-opacity-80 backdrop-blur text-white p-4 rounded-lg border-l-4 border-yellow-500 shadow-lg">
+                    <div class="text-xs text-gray-400 uppercase tracking-wider mb-1">Drift Score</div>
+                    <div id="hud-score" class="text-4xl font-black italic font-mono">0</div>
+                </div>
+            </div>
+
+            <div class="absolute top-4 left-1/2 transform -translate-x-1/2 pointer-events-none select-none">
+                <div class="bg-gray-900 bg-opacity-90 backdrop-blur text-white px-8 py-3 rounded-b-xl border-b-4 border-yellow-500 shadow-xl flex space-x-8">
+                    <div class="text-center">
+                        <div class="text-xs text-gray-500 uppercase tracking-wider">Lap</div>
+                        <div id="hud-lap" class="text-2xl font-bold font-mono text-yellow-400">1</div>
+                    </div>
+                    <div class="text-center w-32">
+                        <div class="text-xs text-gray-500 uppercase tracking-wider">Time</div>
+                        <div id="hud-time" class="text-2xl font-bold font-mono">00:00.00</div>
+                    </div>
+                    <div class="text-center w-32">
+                        <div class="text-xs text-gray-500 uppercase tracking-wider">Best</div>
+                        <div id="hud-best" class="text-2xl font-bold font-mono text-green-400">--:--.--</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="absolute bottom-4 right-4 pointer-events-none select-none">
+                <div class="relative w-32 h-32 bg-gray-900 bg-opacity-80 rounded-full border-4 border-gray-800 flex items-center justify-center shadow-lg">
+                    <div id="speed-meter" class="absolute inset-0 rounded-full border-4 border-transparent border-t-yellow-500 transform -rotate-45"></div>
+                    <div class="text-center">
+                        <div id="hud-speed" class="text-3xl font-bold text-white font-mono">0</div>
+                        <div class="text-xs text-gray-500 font-bold uppercase">KM/H</div>
+                    </div>
+                </div>
+            </div>
+
+            <button id="exit-button" class="absolute top-4 right-4 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded font-bold shadow-lg transition-transform transform hover:scale-105 z-30">
+                EXIT TRACK
+            </button>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

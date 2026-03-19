@@ -120,8 +120,24 @@ body {
 }
 
 /* --- App Links Grid --- */
+.split-layout {
+    display: flex;
+    gap: 1.5rem;
+}
+.split-layout .column {
+    flex: 1;
+    min-width: 0; /* Prevents flex items from overflowing */
+}
+
+@media (max-width: 768px) {
+    .split-layout {
+        flex-direction: column;
+        gap: 0;
+    }
+}
+
 .app-grid {
-    /* Using simple stacking, can use flex/grid for more complex layouts */
+    /* Kept for existing styling inside the column */
 }
 
 .app-link-wrapper {
